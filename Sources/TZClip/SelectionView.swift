@@ -31,6 +31,13 @@ class SelectionView: NSView {
     private var snappedEdges: Set<Int> = [] // 0:minX, 1:maxX, 2:minY, 3:maxY
     private let snapThreshold: CGFloat = 10.0
     
+    // Window Detection
+    var windowProvider: WindowInfoProvider?
+    private var highlightWindowRect: NSRect?
+    private var pendingWindowRect: NSRect? // For hybrid mode click-to-select
+    private let highlightColor = NSColor.systemBlue.withAlphaComponent(0.2)
+    private let highlightBorderColor = NSColor.systemBlue
+    
     // Crosshair
     private var cursorLocation: NSPoint?
     
@@ -74,6 +81,32 @@ class SelectionView: NSView {
         // Draw Overlay
         overlayColor.setFill()
         dirtyRect.fill()
+        
+        // Draw Window Highlight if idle and present
+        if case .idle = state {
+            // DEBUG: Draw ALL detected windows to check coordinates
+            /*
+            if let provider = windowProvider, let window = self.window {
+                NSColor.red.withAlphaComponent(0.5).setStroke() // 增加透明度以便看清
+                for w in provider.allWindows() {
+                     let r = window.convertFromScreen(w.frame)
+                     let path = NSBezierPath(rect: r)
+                     path.lineWidth = 1.0
+                     path.stroke()
+                }
+            }
+            */
+            
+            if let highlightRect = highlightWindowRect {
+                highlightColor.setFill()
+                highlightRect.fill()
+                
+                highlightBorderColor.setStroke()
+                let path = NSBezierPath(rect: highlightRect)
+                path.lineWidth = 2.0
+                path.stroke()
+            }
+        }
         
         // Draw Crosshair if idle
         if case .idle = state, let p = cursorLocation {
@@ -256,17 +289,40 @@ class SelectionView: NSView {
         let p = convert(event.locationInWindow, from: nil)
         
         if selectionRect.isEmpty {
-            // 如果在 idle 状态，记录光标位置并重绘以显示十字线
-        if case .idle = state {
-            cursorLocation = p
-            needsDisplay = true
-        }
+            // 如果在 idle 状态
+            if case .idle = state {
+                cursorLocation = p
+                
+                // Window Detection
+                // Disable if Command key is pressed
+                if !event.modifierFlags.contains(.command), let provider = windowProvider {
+                    // Convert view point to screen point for hit testing
+                    // window?.convertPoint(toScreen: p) // 10.12+
+                    // Since OverlayWindow fills the screen, we can use NSEvent.mouseLocation or convert manually
+                    // But NSEvent.mouseLocation is global.
+                    
+                    let globalMouseLocation = NSEvent.mouseLocation
+                    if let detected = provider.window(at: globalMouseLocation) {
+                        // Convert detected global rect to view local rect
+                        if let window = self.window {
+                            highlightWindowRect = window.convertFromScreen(detected.frame)
+                        }
+                    } else {
+                        highlightWindowRect = nil
+                    }
+                } else {
+                    highlightWindowRect = nil
+                }
+                
+                needsDisplay = true
+            }
             NSCursor.crosshair.set()
             return
         }
         
-        // 既然 selectionRect 不为空，说明已经有选区了，清空 cursorLocation
+        // 既然 selectionRect 不为空，说明已经有选区了，清空 cursorLocation 和 highlight
         cursorLocation = nil
+        highlightWindowRect = nil
         
         if let h = handle(at: p) {
             cursorForHandle(h).set()
@@ -314,12 +370,22 @@ class SelectionView: NSView {
                 hideToolbar()
                 return
             }
+        } else {
+            // Check for Window Selection (Hybrid Mode)
+            // If we have a highlighted window, we MIGHT select it if this is a click,
+            // or we MIGHT ignore it if this becomes a drag.
+            if let highlight = highlightWindowRect, !event.modifierFlags.contains(.command) {
+                pendingWindowRect = highlight
+            }
         }
         
-        // Otherwise start creating
+        // Always start creating initially. 
+        // If it's a click on a window, mouseUp will handle it.
+        // If it's a drag, mouseDragged will handle it (and clear pendingWindowRect).
         state = .creating
         selectionRect = .zero
         cursorLocation = nil // Stop showing crosshair
+        highlightWindowRect = nil // Stop showing highlight
         hideToolbar()
         needsDisplay = true
     }
@@ -329,6 +395,16 @@ class SelectionView: NSView {
         let deltaX = p.x - (lastMouseLocation?.x ?? p.x)
         let deltaY = p.y - (lastMouseLocation?.y ?? p.y)
         lastMouseLocation = p
+        
+        // If we are dragging significantly, cancel any pending window selection
+        if pendingWindowRect != nil {
+            if let start = startPoint {
+                let dragDist = hypot(p.x - start.x, p.y - start.y)
+                if dragDist > 3.0 {
+                    pendingWindowRect = nil
+                }
+            }
+        }
         
         switch state {
         case .creating:
@@ -365,7 +441,13 @@ class SelectionView: NSView {
         snappedEdges.removeAll()
         
         if case .creating = state {
-             if selectionRect.width > 10 && selectionRect.height > 10 {
+            if let windowRect = pendingWindowRect {
+                // Confirm window selection
+                selectionRect = windowRect
+                state = .selected
+                showToolbar()
+                pendingWindowRect = nil
+            } else if selectionRect.width > 10 && selectionRect.height > 10 {
                  state = .selected
                  showToolbar()
              } else {
@@ -381,6 +463,7 @@ class SelectionView: NSView {
         
         startPoint = nil
         lastMouseLocation = nil
+        pendingWindowRect = nil
         needsDisplay = true
     }
     

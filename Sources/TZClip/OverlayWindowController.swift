@@ -12,7 +12,7 @@ class OverlayWindow: NSWindow {
 
 class OverlayWindowController: NSWindowController {
     
-    init(screen: NSScreen) {
+    init(screen: NSScreen, windowProvider: WindowInfoProvider? = nil) {
         let frame = screen.frame
         print("Initializing overlay for screen: \(frame)")
         
@@ -37,6 +37,7 @@ class OverlayWindowController: NSWindowController {
         // View frame should be relative to window (0,0), not screen coordinates
         let viewRect = NSRect(origin: .zero, size: frame.size)
         let view = SelectionView(frame: viewRect)
+        view.windowProvider = windowProvider
         window.contentView = view
         
         // 必须 makeKey 才能接收键盘事件

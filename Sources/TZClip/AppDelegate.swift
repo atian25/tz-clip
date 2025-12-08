@@ -10,6 +10,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayControllers: [OverlayWindowController] = []
     var statusItem: NSStatusItem?
     
+    // Window Detection Provider
+    var windowInfoProvider: Any? // Using Any to avoid availability check issues in property declaration if simpler
+    // Or better:
+    private var _windowInfoProvider: Any?
+    
+    @available(macOS 12.3, *)
+    var windowProvider: WindowInfoProvider {
+        if _windowInfoProvider == nil {
+            _windowInfoProvider = WindowInfoProvider()
+        }
+        return _windowInfoProvider as! WindowInfoProvider
+    }
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("Application did finish launching")
         
@@ -47,13 +60,78 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 【关键修改】临时切换为 Regular 模式以强制抢占焦点
         NSApp.setActivationPolicy(.regular)
         
-        // 稍微延迟一下，给系统一点反应时间（可选，但在某些旧系统上有用）
-        // 这里直接执行，如果不行再加延迟
+        // 异步启动流程，避免阻塞主线程（虽然 startCapture 是 @objc，但我们可以用 Task）
+        Task {
+            // 0. 预检查权限 (macOS 10.15+)
+            let preflight = CGPreflightScreenCaptureAccess()
+            if !preflight {
+                print("CGPreflightScreenCaptureAccess returned false. System dialog MIGHT appear, or we might be blocked.")
+                // 不立即返回，尝试继续，因为有时候 preflight 不准
+            }
+            
+            // 1. 尝试获取窗口信息。
+            var success = false
+            if #available(macOS 12.3, *) {
+                print("Requesting window info...")
+                let provider = self.windowProvider
+                // 如果 preflight 失败，这里的调用可能会再次触发系统弹窗，或者直接失败
+                success = await provider.captureWindows()
+                if success {
+                    print("Window info captured successfully.")
+                } else {
+                    print("Failed to capture window info.")
+                }
+            }
+            
+            // 2. 显示 Overlay
+            // 逻辑修改：只要 captureWindows 成功，就显示。
+            // 如果 captureWindows 失败，且 preflight 也失败，那才弹我们的 Alert。
+            if success {
+                await MainActor.run {
+                    self.showOverlayWindows()
+                }
+            } else {
+                // 只有在真的拿不到数据时，才恢复状态并提示
+                await MainActor.run {
+                     NSApp.setActivationPolicy(.accessory)
+                     if !preflight {
+                         self.showPermissionAlert()
+                     }
+                }
+            }
+        }
+    }
+    
+    private func showPermissionAlert() {
+        // 确保 Alert 在前台显示
+        NSApp.activate(ignoringOtherApps: true)
         
+        let alert = NSAlert()
+        alert.messageText = "Screen Recording Permission Required"
+        alert.informativeText = "Please allow screen recording in System Settings -> Privacy & Security -> Screen Recording, then restart the app."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+        
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    private func showOverlayWindows() {
         let mouseLocation = NSEvent.mouseLocation
         
         for screen in NSScreen.screens {
-            let controller = OverlayWindowController(screen: screen)
+            var controller: OverlayWindowController
+            if #available(macOS 12.3, *) {
+                controller = OverlayWindowController(screen: screen, windowProvider: self.windowProvider)
+            } else {
+                controller = OverlayWindowController(screen: screen)
+            }
+            
             overlayControllers.append(controller)
             
             if NSMouseInRect(mouseLocation, screen.frame, false) {
@@ -66,15 +144,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 强制激活
         NSApp.activate(ignoringOtherApps: true)
-        
-        // 【关键修改】切回 Accessory 模式，但在激活后执行
-        // 注意：立即切回可能会导致焦点又丢了，所以我们保留 Regular 模式直到截图结束
-        // 或者，我们可以尝试先不切回，看看效果。
-        // 为了用户体验（不显示 Dock 图标），通常是在 activate 成功后切回。
-        // 但为了解决您的问题，我先保持 Regular 模式，看看是否能解决焦点问题。
-        // 如果能解决，说明方向对了，后面再优化 Dock 图标隐藏的问题。
-        // 修正：保持 Regular 会显示 Dock 图标，这可能不是您想要的，但在 MVP 阶段为了功能优先，
-        // 我先让它显示 Dock 图标，验证焦点问题。
     }
     
     func stopCapture() {
