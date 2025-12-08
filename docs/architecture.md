@@ -21,14 +21,33 @@
 
 ### 2.1 应用生命周期
 *   **Entry Point**: `@main` (SwiftUI App) 或 `NSApplicationDelegate`。
-*   **无停靠栏模式**: `LSUIElement = YES` (Info.plist)，应用启动后不显示在 Dock 上，仅驻留 Menu Bar。
+*   **无停靠栏模式**: `LSUIElement = YES` (Info.plist)，应用启动后不显示在 Dock 上。
+*   **菜单栏常驻 (Status Bar)**:
+    *   由于隐藏了 Dock 图标，必须在 macOS 菜单栏（右上角）提供一个常驻图标 (`NSStatusItem`)。
+    *   **职责**: 提供应用状态指示、快速设置入口以及 **退出应用 (Quit)** 的显式途径。
+    *   **实现**: 使用 `NSStatusBar.system.statusItem`，并配置下拉菜单 (`NSMenu`)。
+*   **焦点抢占 (Activation)**:
+    *   **问题**: `LSUIElement` 应用在后台启动后，难以通过 `NSApp.activate` 抢占系统焦点，导致无法响应全局快捷键（如 ESC）。
+    *   **解决方案**: 在进入截图模式前，临时将 `ActivationPolicy` 切换为 `.regular`，调用 `activate(ignoringOtherApps: true)`，然后再切回（或在截图结束后切回）。
 
 ### 2.2 安全网 (Safety Net)
+*   **退出机制**:
+    *   **CMD+Q 支持**: 必须通过 `SelectionView.keyDown` 显式监听 `Cmd+Q`，调用 `NSApp.terminate`。
+    *   **菜单项**: 状态栏菜单必须包含 "Quit TZClip" 选项。
 *   **全局 ESC 监听**:
-    *   在 `NSApplication` 层级或通过 `CGEventTap` 注册一个最高优先级的事件监听器。
-    *   **逻辑**: 只要按下 `ESC` (或 `Cmd+Q` / `Cmd+W` 组合)，强制调用 `exit(0)` 或重置所有 UI 状态。这在开发“全屏遮罩”类应用时至关重要，防止 UI 锁死导致无法操作电脑。
+    *   **两级退出**: 
+        1. 有选区时 -> 清除选区。
+        2. 无选区时 -> 退出截图模式。
+    *   **实现**: 在 `SelectionView` 和 `AppDelegate` 双重监听，确保无论焦点在哪里都能响应。
 
-### 2.3 模块化 (Modularity)
+### 2.3 交互细节 (Interaction)
+*   **工具栏事件分发**:
+    *   由于 `SelectionView` 覆盖全屏，工具栏作为子视图容易被遮挡或事件被父视图拦截。
+    *   **HitTest**: 必须重写 `SelectionView.hitTest`，优先检测并返回工具栏视图，确保按钮可点击。
+*   **防误触**:
+    *   点击选区外部不应立即重置选区，必须配合拖拽检测（阈值 > 3px）才开始新选区，防止用户误点导致选区丢失。
+
+### 2.4 模块化 (Modularity)
 *   **Core**: 包含截图引擎、窗口管理、权限管理等底层逻辑。
 *   **UI**: 包含 SwiftUI 视图、工具栏、标注画板。
 *   **Features**: 独立的业务模块（如 PinWindow, OCRService）。
