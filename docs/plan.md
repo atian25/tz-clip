@@ -55,9 +55,15 @@
 - [x] **SelectionView (NSView)**:
     - [x] 响应 `mouseDown`, `mouseDragged`, `mouseUp`。
     - [x] 绘制橡胶圈选框 (Rubber band selection)。
+    - [x] **交互升级 (Interaction State Machine)**:
+        - [x] 引入 `InteractionState` (idle, creating, selected, moving, resizing)。
+        - [x] 实现选区移动 (Move)。
+        - [x] 实现选区调整大小 (Resize) - 8个方向手柄。
+        - [x] 光标自适应 (Cursor Management)。
     - [x] **工具栏**:
         - [x] 显示 Cancel / Confirm 按钮。
         - [x] 自动吸附选区右下角（或上方），确保可见性。
+        - [x] 交互时自动隐藏工具栏。
         - [x] Cancel 直接退出截图模式。
     - [x] **防误触优化**:
         - [x] 重写 `hitTest` 确保工具栏点击有效。

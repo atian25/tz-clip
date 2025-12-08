@@ -1,26 +1,42 @@
 import Cocoa
 
+// MARK: - Enums
+
+enum InteractionState {
+    case idle               // No selection
+    case creating           // Dragging to create new selection
+    case selected           // Selection exists, waiting for interaction
+    case moving             // Moving the entire selection
+    case resizing(Handle)   // Resizing via a handle
+}
+
+enum Handle: CaseIterable {
+    case topLeft, top, topRight
+    case left, right
+    case bottomLeft, bottom, bottomRight
+}
+
 class SelectionView: NSView {
     
-    // 鼠标按下的起始点
+    // MARK: - Properties
+    
     private var startPoint: NSPoint?
-    // 当前鼠标位置
-    private var currentPoint: NSPoint?
-    // 计算出的选区矩形
     private var selectionRect: NSRect = .zero
     
-    // 标记是否正在进行一次新的选择拖拽
-    private var isDraggingSelection = false
+    // Interaction State
+    private var state: InteractionState = .idle
+    private var lastMouseLocation: NSPoint?
     
-    // 工具栏视图
+    // Configuration
+    private let handleSize: CGFloat = 8.0
+    private let overlayColor = NSColor.black.withAlphaComponent(0.5)
+    private let borderColor = NSColor.white
+    private let borderWidth: CGFloat = 1.0
+    
     private var toolbarView: NSStackView?
     
-    // 遮罩颜色
-    private let overlayColor = NSColor.black.withAlphaComponent(0.5)
-    // 边框颜色
-    private let borderColor = NSColor.white
-    // 边框宽度
-    private let borderWidth: CGFloat = 1.0
+    // Tracking area for cursor updates
+    private var trackingArea: NSTrackingArea?
     
     override var acceptsFirstResponder: Bool {
         return true
@@ -30,6 +46,87 @@ class SelectionView: NSView {
         return false
     }
     
+    // MARK: - Lifecycle
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea = trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        
+        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow]
+        trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(trackingArea!)
+    }
+    
+    // MARK: - Drawing
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        // Draw Overlay
+        overlayColor.setFill()
+        dirtyRect.fill()
+        
+        if !selectionRect.isEmpty {
+            // Cut out selection
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSColor.clear.setFill()
+            selectionRect.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            
+            // Draw Border
+            borderColor.setStroke()
+            let path = NSBezierPath(rect: selectionRect)
+            path.lineWidth = borderWidth
+            path.stroke()
+            
+            // Draw Handles if selected or moving/resizing
+            // Only hide handles when we are creating a NEW selection
+            if case .creating = state {
+                // Don't draw handles
+            } else {
+                drawHandles()
+            }
+        }
+    }
+    
+    private func drawHandles() {
+        NSColor.white.setFill()
+        for handle in Handle.allCases {
+            let rect = rectForHandle(handle)
+            let path = NSBezierPath(ovalIn: rect)
+            path.fill()
+        }
+    }
+    
+    private func rectForHandle(_ handle: Handle) -> NSRect {
+        let x = selectionRect.origin.x
+        let y = selectionRect.origin.y
+        let w = selectionRect.width
+        let h = selectionRect.height
+        let hs = handleSize
+        let half = hs / 2
+        
+        var center = NSPoint.zero
+        
+        switch handle {
+        case .topLeft:     center = NSPoint(x: x, y: y + h)
+        case .top:         center = NSPoint(x: x + w / 2, y: y + h)
+        case .topRight:    center = NSPoint(x: x + w, y: y + h)
+        case .left:        center = NSPoint(x: x, y: y + h / 2)
+        case .right:       center = NSPoint(x: x + w, y: y + h / 2)
+        case .bottomLeft:  center = NSPoint(x: x, y: y)
+        case .bottom:      center = NSPoint(x: x + w / 2, y: y)
+        case .bottomRight: center = NSPoint(x: x + w, y: y)
+        }
+        
+        return NSRect(x: center.x - half, y: center.y - half, width: hs, height: hs)
+    }
+    
+    // MARK: - Hit Testing
+    
     override func hitTest(_ point: NSPoint) -> NSView? {
         if let toolbar = toolbarView, NSPointInRect(point, toolbar.frame) {
             return super.hitTest(point)
@@ -37,91 +134,204 @@ class SelectionView: NSView {
         return self
     }
     
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
+    private func handle(at point: NSPoint) -> Handle? {
+        for handle in Handle.allCases {
+            if rectForHandle(handle).contains(point) {
+                return handle
+            }
+        }
+        return nil
+    }
+    
+    // MARK: - Mouse Events
+    
+    override func mouseMoved(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
         
-        overlayColor.setFill()
-        dirtyRect.fill()
+        if selectionRect.isEmpty {
+            NSCursor.crosshair.set()
+            return
+        }
         
-        if !selectionRect.isEmpty {
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current?.compositingOperation = .clear
-            NSColor.clear.setFill()
-            selectionRect.fill()
-            NSGraphicsContext.restoreGraphicsState()
-            
-            borderColor.setStroke()
-            let path = NSBezierPath(rect: selectionRect)
-            path.lineWidth = borderWidth
-            path.stroke()
+        if let h = handle(at: p) {
+            cursorForHandle(h).set()
+        } else if selectionRect.contains(p) {
+            NSCursor.openHand.set()
+        } else {
+            NSCursor.crosshair.set()
         }
     }
     
-    // MARK: - Event Handling
+    private func cursorForHandle(_ handle: Handle) -> NSCursor {
+        switch handle {
+        case .top, .bottom: return .resizeUpDown
+        case .left, .right: return .resizeLeftRight
+        // Using crosshair for corners as a simple default, or resizeUpDown/LeftRight
+        // Ideally we would use diagonal cursors but they are not standard in NSCursor without private API or images
+        default: return .crosshair
+        }
+    }
     
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         
-        // 记录起始点，但不立即重置选区
-        startPoint = convert(event.locationInWindow, from: nil)
-        isDraggingSelection = false
-    }
-    
-    override func mouseDragged(with event: NSEvent) {
-        guard let start = startPoint else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        startPoint = p
+        lastMouseLocation = p
         
-        let current = convert(event.locationInWindow, from: nil)
-        
-        // 如果是首次检测到拖拽（位移超过阈值），则开始新选区逻辑
-        if !isDraggingSelection {
-            let distance = hypot(current.x - start.x, current.y - start.y)
-            if distance > 3.0 { // 3px 阈值防止抖动
-                isDraggingSelection = true
-                
-                // 开始新选区：清除旧选区和工具栏
-                selectionRect = .zero
-                toolbarView?.removeFromSuperview()
-                toolbarView = nil
-                needsDisplay = true
-            } else {
-                return // 未达到阈值，忽略
+        // Check for handles first
+        if !selectionRect.isEmpty {
+            if let h = handle(at: p) {
+                state = .resizing(h)
+                hideToolbar()
+                return
+            }
+            
+            if selectionRect.contains(p) {
+                state = .moving
+                NSCursor.closedHand.set()
+                hideToolbar()
+                return
             }
         }
         
-        // 更新选区
-        currentPoint = current
-        selectionRect = NSRect(
-            x: min(start.x, current.x),
-            y: min(start.y, current.y),
-            width: abs(current.x - start.x),
-            height: abs(current.y - start.y)
-        )
+        // Otherwise start creating
+        state = .creating
+        selectionRect = .zero
+        hideToolbar()
+        needsDisplay = true
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        let deltaX = p.x - (lastMouseLocation?.x ?? p.x)
+        let deltaY = p.y - (lastMouseLocation?.y ?? p.y)
+        lastMouseLocation = p
+        
+        switch state {
+        case .creating:
+            guard let start = startPoint else { return }
+            selectionRect = NSRect(
+                x: min(start.x, p.x),
+                y: min(start.y, p.y),
+                width: abs(p.x - start.x),
+                height: abs(p.y - start.y)
+            )
+            
+        case .moving:
+            selectionRect.origin.x += deltaX
+            selectionRect.origin.y += deltaY
+            // Ensure we don't move completely offscreen? 
+            // For now, let's allow free movement.
+            
+        case .resizing(let handle):
+            resizeSelection(handle: handle, deltaX: deltaX, deltaY: deltaY)
+            
+        default:
+            break
+        }
         
         needsDisplay = true
     }
     
     override func mouseUp(with event: NSEvent) {
-        // 只有当真正进行了拖拽操作，或者当前没有选区时，才打印日志
-        if isDraggingSelection {
-            print("Selection completed: \(selectionRect)")
-            
-            if selectionRect.width > 10 && selectionRect.height > 10 {
-                showToolbar()
-            }
+        if case .creating = state {
+             if selectionRect.width > 10 && selectionRect.height > 10 {
+                 state = .selected
+                 showToolbar()
+             } else {
+                 state = .idle
+                 selectionRect = .zero
+             }
         } else {
-            // 如果只是点击（没有拖拽），且之前有选区，则什么都不做（保留选区）
-            // 除非是点击了空白处且没有选区（那是初始状态）
-            
-            // 补救措施：如果之前有选区被意外隐藏了（理论上不会，因为 mouseDown 没清空），这里只需确保工具栏可见
-            if !selectionRect.isEmpty && toolbarView == nil {
-                showToolbar()
+            // Moving or resizing finished
+            state = .selected
+            NSCursor.openHand.set()
+            showToolbar()
+        }
+        
+        startPoint = nil
+        lastMouseLocation = nil
+        needsDisplay = true
+    }
+    
+    // MARK: - Logic Helpers
+    
+    private func resizeSelection(handle: Handle, deltaX: CGFloat, deltaY: CGFloat) {
+        var r = selectionRect
+        
+        // Minimum size to prevent flipping for MVP
+        let minSize: CGFloat = 10.0
+        
+        switch handle {
+        case .left:
+            let newWidth = r.size.width - deltaX
+            if newWidth >= minSize {
+                r.origin.x += deltaX
+                r.size.width = newWidth
+            }
+        case .right:
+            let newWidth = r.size.width + deltaX
+            if newWidth >= minSize {
+                r.size.width = newWidth
+            }
+        case .bottom:
+            let newHeight = r.size.height - deltaY
+            if newHeight >= minSize {
+                r.origin.y += deltaY
+                r.size.height = newHeight
+            }
+        case .top:
+            let newHeight = r.size.height + deltaY
+            if newHeight >= minSize {
+                r.size.height = newHeight
+            }
+        case .topLeft:
+            let newWidth = r.size.width - deltaX
+            let newHeight = r.size.height + deltaY
+            if newWidth >= minSize {
+                r.origin.x += deltaX
+                r.size.width = newWidth
+            }
+            if newHeight >= minSize {
+                r.size.height = newHeight
+            }
+        case .topRight:
+            let newWidth = r.size.width + deltaX
+            let newHeight = r.size.height + deltaY
+            if newWidth >= minSize {
+                r.size.width = newWidth
+            }
+            if newHeight >= minSize {
+                r.size.height = newHeight
+            }
+        case .bottomLeft:
+            let newWidth = r.size.width - deltaX
+            let newHeight = r.size.height - deltaY
+            if newWidth >= minSize {
+                r.origin.x += deltaX
+                r.size.width = newWidth
+            }
+            if newHeight >= minSize {
+                r.origin.y += deltaY
+                r.size.height = newHeight
+            }
+        case .bottomRight:
+            let newWidth = r.size.width + deltaX
+            let newHeight = r.size.height - deltaY
+            if newWidth >= minSize {
+                r.size.width = newWidth
+            }
+            if newHeight >= minSize {
+                r.origin.y += deltaY
+                r.size.height = newHeight
             }
         }
         
-        // 重置状态
-        startPoint = nil
-        isDraggingSelection = false
+        selectionRect = r
     }
+    
+    // MARK: - Keyboard & Toolbar
     
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { // ESC
@@ -134,10 +344,59 @@ class SelectionView: NSView {
             return
         }
         
+        // Handle arrow keys if we have a selection
+        if !selectionRect.isEmpty {
+            let shift = event.modifierFlags.contains(.shift)
+            let option = event.modifierFlags.contains(.option)
+            let step: CGFloat = shift ? 10.0 : 1.0
+            
+            var dx: CGFloat = 0
+            var dy: CGFloat = 0
+            var dWidth: CGFloat = 0
+            var dHeight: CGFloat = 0
+            var handled = false
+            
+            // Arrow key codes: Left=123, Right=124, Down=125, Up=126
+            if let specialKey = event.specialKey {
+                switch specialKey {
+                case .leftArrow:
+                    if option { dWidth = -step } else { dx = -step }
+                    handled = true
+                case .rightArrow:
+                    if option { dWidth = step } else { dx = step }
+                    handled = true
+                case .upArrow:
+                    if option { dHeight = step } else { dy = step }
+                    handled = true
+                case .downArrow:
+                    if option { dHeight = -step } else { dy = -step }
+                    handled = true
+                default:
+                    break
+                }
+            }
+            
+            if handled {
+                if option {
+                    // Resizing (adjusting width/height from bottom-right implied)
+                    var newRect = selectionRect
+                    newRect.size.width = max(10, newRect.width + dWidth)
+                    newRect.size.height = max(10, newRect.height + dHeight)
+                    selectionRect = newRect
+                } else {
+                    // Moving
+                    selectionRect.origin.x += dx
+                    selectionRect.origin.y += dy
+                }
+                
+                needsDisplay = true
+                showToolbar() // Update toolbar position
+                return
+            }
+        }
+        
         super.keyDown(with: event)
     }
-    
-    // MARK: - Toolbar Logic
     
     private func showToolbar() {
         toolbarView?.removeFromSuperview()
@@ -181,6 +440,11 @@ class SelectionView: NSView {
         self.toolbarView = stack
     }
     
+    private func hideToolbar() {
+        toolbarView?.removeFromSuperview()
+        toolbarView = nil
+    }
+    
     @objc func onConfirm() {
         print("Confirmed capture: \(selectionRect)")
         NotificationCenter.default.post(name: .stopCapture, object: nil)
@@ -194,8 +458,8 @@ class SelectionView: NSView {
     private func handleCancel() {
         if !selectionRect.isEmpty {
             selectionRect = .zero
-            toolbarView?.removeFromSuperview()
-            toolbarView = nil
+            state = .idle
+            hideToolbar()
             needsDisplay = true
         } else {
             NotificationCenter.default.post(name: .stopCapture, object: nil)

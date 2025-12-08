@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Check for fswatch
+if ! command -v fswatch &> /dev/null; then
+    echo "Error: fswatch is not installed."
+    echo "Please install it using: brew install fswatch"
+    exit 1
+fi
+
 # 监听 Sources 目录的变化
 echo "Starting watch mode..."
 
