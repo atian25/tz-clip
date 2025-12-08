@@ -52,6 +52,15 @@ class WindowInfoProvider {
                     return w.frame.width > 10 && w.frame.height > 10
                 }
             
+            // Debug Logging
+            /*
+            print("--- Captured Windows Debug Info ---")
+            for (index, w) in self.windows.prefix(50).enumerated() {
+                print("[\(index)] App: \(w.appName ?? "nil"), Title: \(w.title ?? "nil"), Layer: \(w.zOrder), Frame: \(w.frame)")
+            }
+            print("-----------------------------------")
+            */
+            
             self.isReady = true
             return true
             
@@ -69,6 +78,8 @@ class WindowInfoProvider {
         // We need to sort candidates to find the true visual top-most.
         let candidates = windows.enumerated().filter { $0.element.frame.contains(point) }
         
+        if candidates.isEmpty { return nil }
+        
         // Sort strategy:
         // 1. Layer (Z-Order) Descending: Higher layer means more "front" (e.g. Menu > Window > Desktop)
         // 2. Original Index Ascending: For same layer, SCK order is Front-to-Back.
@@ -80,6 +91,12 @@ class WindowInfoProvider {
             }
             return p1.offset < p2.offset
         }
+        
+        // Debug Logging for Hit Test (Throttle this in production!)
+        // print("Hit Test at \(point): Found \(candidates.count) candidates")
+        // for (i, c) in sortedCandidates.prefix(5).enumerated() {
+        //    print("  Candidate[\(i)]: \(c.element.appName ?? "?") (L:\(c.element.zOrder))")
+        // }
         
         guard let topMost = sortedCandidates.first(where: { 
             let w = $0.element
@@ -125,6 +142,15 @@ class WindowInfoProvider {
     
     func allWindows() -> [DetectedWindow] {
         return windows
+    }
+    
+    func debugWindows(at point: NSPoint) {
+        print("🔍 Debugging Hit Test at \(point)")
+        let candidates = windows.enumerated().filter { $0.element.frame.contains(point) }
+        print("   Found \(candidates.count) raw candidates containing point:")
+        for (i, c) in candidates.enumerated() {
+             print("   [\(i)] (OrigIndex: \(c.offset)) App: \(c.element.appName ?? "nil"), Title: \(c.element.title ?? "nil"), Layer: \(c.element.zOrder), Rect: \(c.element.frame)")
+        }
     }
 
     private func convert(scWindow: SCWindow) -> DetectedWindow {

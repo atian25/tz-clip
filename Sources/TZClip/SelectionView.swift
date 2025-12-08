@@ -349,6 +349,11 @@ class SelectionView: NSView {
         window?.makeFirstResponder(self)
         
         let p = convert(event.locationInWindow, from: nil)
+        
+        // DEBUG: Check windows at this point
+        // let globalLocation = NSEvent.mouseLocation
+        // windowProvider?.debugWindows(at: globalLocation)
+        
         startPoint = p
         lastMouseLocation = p
         
