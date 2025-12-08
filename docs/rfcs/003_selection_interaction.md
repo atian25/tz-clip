@@ -1,11 +1,11 @@
 # RFC 003: 选区交互优化 (Selection Interaction)
 
-Status: Implemented
+Status: Partially Implemented (Core logic done, Visual Aids pending)
 
 ## 1. 背景与目标
-当前的选区功能仅支持“一次性拖拽创建”，一旦创建完成无法修改，只能重新绘制。为了提供专业级的截图体验，必须支持对已有选区的**移动 (Move)** 和 **调整大小 (Resize)**。
+当前的选区功能仅支持“一次性拖拽创建”，一旦创建完成无法修改，只能重新绘制。为了提供专业级的截图体验，必须支持对已有选区的**移动 (Move)** 和 **调整大小 (Resize)**，并提供必要的**视觉辅助 (Visual Aids)**。
 
-## 2. 核心交互设计
+## 2. 核心交互设计 (Phase 1)
 
 ### 2.1 交互状态机 (Interaction State Machine)
 引入明确的状态管理，替代当前简单的 `isDraggingSelection` 布尔值。
@@ -42,26 +42,43 @@ enum Handle {
 *   **Shift + 方向键**: 移动选区 10px。
 *   **Option + 方向键**: 调整选区大小（增加/减少 1px，默认调整右下角）。
 
-## 3. 技术实现细节
+## 3. 视觉辅助设计 (Phase 2)
 
-### 3.1 控制手柄 (Handles)
-*   **绘制**: 在 `draw(_:)` 方法中，当状态为 `selected` 时，在选区的 8 个关键点绘制白色圆点（直径 6-8px，带阴影）。
-*   **命中检测 (Hit Testing)**:
-    *   定义一个 `func handle(at point: NSPoint) -> Handle?`。
-    *   优先检测手柄，其次检测选区内部。
+### 3.1 实时尺寸显示 (Size Indicator)
+*   **内容**: 显示当前选区的宽度和高度，格式为 `W x H` (例如 `400 x 300`)。
+*   **位置**: 
+    *   默认显示在选区左上角的上方。
+    *   如果上方空间不足，自动移动到选区内部或下方。
+*   **样式**: 黑色半透明背景，白色文字，圆角矩形，清晰易读。
+*   **时机**: 仅在 `creating`, `moving`, `resizing`, `selected` 状态下显示。
 
-### 3.2 光标管理
-*   使用 `addTrackingArea` 监控鼠标移动。
-*   在 `mouseMoved` 中根据位置设置 `NSCursor`。
+### 3.2 屏幕边缘吸附 (Screen Edge Snapping)
+*   **触发条件**: 当选区的任意边缘距离屏幕边缘（Top, Bottom, Left, Right）小于阈值（例如 10px）时。
+*   **行为**: 
+    *   **吸附**: 自动将选区边缘对齐到屏幕边缘。
+    *   **反馈**: 显示一条贯穿屏幕的辅助线（Snap Guide），提示用户已吸附。
+*   **覆盖**: 按住 `Cmd` 键可以临时禁用吸附功能（可选）。
 
-### 3.3 边界限制
-*   无论是移动还是调整大小，都必须确保 `selectionRect` 不会超出 `SelectionView` (屏幕) 的边界。
+## 4. 技术实现细节
 
-## 4. 任务分解
-1.  **重构状态管理**: 引入 `InteractionState` 枚举，改造 `SelectionView`。
-2.  **实现手柄绘制**: 绘制 8 个控制点。
-3.  **实现光标更新**: 添加 TrackingArea，根据 Hover 位置切换光标。
-4.  **实现拖拽逻辑**:
-    *   支持 Move。
-    *   支持 Resize (8个方向)。
-5.  **实现键盘微调**: 响应方向键事件。
+### 4.1 绘制与交互
+*   **手柄绘制**: 在 `draw(_:)` 方法中，当状态为 `selected` 时，在选区的 8 个关键点绘制白色圆点。
+*   **命中检测**: 定义 `func handle(at point: NSPoint) -> Handle?`，优先检测手柄。
+*   **尺寸绘制**: 在 `draw(_:)` 中绘制 `NSAttributedString`。
+
+### 4.2 吸附算法
+在 `mouseDragged` 更新位置时介入：
+1.  **计算目标位置**: 根据鼠标位移计算出的原始 `newRect`。
+2.  **检测吸附**: 计算边缘距离，若小于阈值则强制修正。
+3.  **绘制辅助线**: 根据吸附状态绘制线条。
+
+## 5. 任务分解
+1.  **Core Interaction (已完成)**:
+    *   [x] 重构状态管理。
+    *   [x] 实现手柄绘制。
+    *   [x] 实现光标更新。
+    *   [x] 实现拖拽逻辑 (Move/Resize)。
+    *   [x] 实现键盘微调。
+2.  **Visual Aids (待办)**:
+    *   [ ] 实现尺寸显示。
+    *   [ ] 实现吸附逻辑与辅助线。

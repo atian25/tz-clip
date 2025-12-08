@@ -27,6 +27,10 @@ class SelectionView: NSView {
     private var state: InteractionState = .idle
     private var lastMouseLocation: NSPoint?
     
+    // Snapping
+    private var snappedEdges: Set<Int> = [] // 0:minX, 1:maxX, 2:minY, 3:maxY
+    private let snapThreshold: CGFloat = 10.0
+    
     // Configuration
     private let handleSize: CGFloat = 8.0
     private let overlayColor = NSColor.black.withAlphaComponent(0.5)
@@ -82,6 +86,9 @@ class SelectionView: NSView {
             path.lineWidth = borderWidth
             path.stroke()
             
+            // Draw Snap Guides
+            drawSnapGuides()
+            
             // Draw Handles if selected or moving/resizing
             // Only hide handles when we are creating a NEW selection
             if case .creating = state {
@@ -89,6 +96,9 @@ class SelectionView: NSView {
             } else {
                 drawHandles()
             }
+            
+            // Draw Size Indicator
+            drawSizeIndicator()
         }
     }
     
@@ -99,6 +109,78 @@ class SelectionView: NSView {
             let path = NSBezierPath(ovalIn: rect)
             path.fill()
         }
+    }
+    
+    private func drawSnapGuides() {
+        guard !snappedEdges.isEmpty else { return }
+        
+        let guideColor = NSColor.systemYellow
+        guideColor.setStroke()
+        let path = NSBezierPath()
+        path.lineWidth = 1.0
+        // Dashed line pattern
+        path.setLineDash([4.0, 2.0], count: 2, phase: 0)
+        
+        if snappedEdges.contains(0) { // minX
+            path.move(to: NSPoint(x: selectionRect.minX, y: bounds.minY))
+            path.line(to: NSPoint(x: selectionRect.minX, y: bounds.maxY))
+        }
+        if snappedEdges.contains(1) { // maxX
+            path.move(to: NSPoint(x: selectionRect.maxX, y: bounds.minY))
+            path.line(to: NSPoint(x: selectionRect.maxX, y: bounds.maxY))
+        }
+        if snappedEdges.contains(2) { // minY
+            path.move(to: NSPoint(x: bounds.minX, y: selectionRect.minY))
+            path.line(to: NSPoint(x: bounds.maxX, y: selectionRect.minY))
+        }
+        if snappedEdges.contains(3) { // maxY
+            path.move(to: NSPoint(x: bounds.minX, y: selectionRect.maxY))
+            path.line(to: NSPoint(x: bounds.maxX, y: selectionRect.maxY))
+        }
+        
+        path.stroke()
+    }
+    
+    private func drawSizeIndicator() {
+        let width = Int(round(selectionRect.width))
+        let height = Int(round(selectionRect.height))
+        let text = "\(width) × \(height)"
+        
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.white
+        ]
+        let size = text.size(withAttributes: attrs)
+        
+        let padding: CGFloat = 4
+        let bgRectSize = NSSize(width: size.width + padding * 2, height: size.height + padding * 2)
+        
+        // Default position: Top-Left, slightly above
+        var origin = NSPoint(x: selectionRect.minX, y: selectionRect.maxY + 6)
+        
+        // 1. If out of bounds top, move inside top-left
+        if origin.y + bgRectSize.height > bounds.maxY {
+            origin.y = selectionRect.maxY - bgRectSize.height - 6
+        }
+        
+        // 2. Ensure x is within bounds
+        if origin.x < bounds.minX {
+            origin.x = bounds.minX + 4
+        }
+        if origin.x + bgRectSize.width > bounds.maxX {
+            origin.x = bounds.maxX - bgRectSize.width - 4
+        }
+        
+        let bgRect = NSRect(origin: origin, size: bgRectSize)
+        
+        NSGraphicsContext.saveGraphicsState()
+        let path = NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4)
+        NSColor.black.withAlphaComponent(0.7).setFill()
+        path.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        
+        let textPoint = NSPoint(x: origin.x + padding, y: origin.y + padding)
+        text.draw(at: textPoint, withAttributes: attrs)
     }
     
     private func rectForHandle(_ handle: Handle) -> NSRect {
@@ -221,8 +303,6 @@ class SelectionView: NSView {
         case .moving:
             selectionRect.origin.x += deltaX
             selectionRect.origin.y += deltaY
-            // Ensure we don't move completely offscreen? 
-            // For now, let's allow free movement.
             
         case .resizing(let handle):
             resizeSelection(handle: handle, deltaX: deltaX, deltaY: deltaY)
@@ -231,10 +311,19 @@ class SelectionView: NSView {
             break
         }
         
+        // Apply Snapping (unless Command is pressed)
+        if !event.modifierFlags.contains(.command) {
+            selectionRect = applySnapping(to: selectionRect)
+        } else {
+            snappedEdges.removeAll()
+        }
+        
         needsDisplay = true
     }
     
     override func mouseUp(with event: NSEvent) {
+        snappedEdges.removeAll()
+        
         if case .creating = state {
              if selectionRect.width > 10 && selectionRect.height > 10 {
                  state = .selected
@@ -256,6 +345,38 @@ class SelectionView: NSView {
     }
     
     // MARK: - Logic Helpers
+    
+    private func applySnapping(to rect: NSRect) -> NSRect {
+        var r = rect
+        var edges: Set<Int> = []
+        
+        // Snap to Screen Edges
+        
+        // MinX (Left)
+        if abs(r.minX - bounds.minX) < snapThreshold {
+            r.origin.x = bounds.minX
+            edges.insert(0)
+        }
+        // MaxX (Right)
+        else if abs(r.maxX - bounds.maxX) < snapThreshold {
+            r.origin.x = bounds.maxX - r.width
+            edges.insert(1)
+        }
+        
+        // MinY (Bottom in macOS coords, visual bottom)
+        if abs(r.minY - bounds.minY) < snapThreshold {
+            r.origin.y = bounds.minY
+            edges.insert(2)
+        }
+        // MaxY (Top)
+        else if abs(r.maxY - bounds.maxY) < snapThreshold {
+            r.origin.y = bounds.maxY - r.height
+            edges.insert(3)
+        }
+        
+        snappedEdges = edges
+        return r
+    }
     
     private func resizeSelection(handle: Handle, deltaX: CGFloat, deltaY: CGFloat) {
         var r = selectionRect
