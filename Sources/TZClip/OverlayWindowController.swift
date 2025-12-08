@@ -30,10 +30,13 @@ class OverlayWindowController: NSWindowController {
         window.hasShadow = false
         window.ignoresMouseEvents = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.acceptsMouseMovedEvents = true // 关键：开启鼠标移动事件
         
         super.init(window: window)
         
-        let view = SelectionView(frame: frame)
+        // View frame should be relative to window (0,0), not screen coordinates
+        let viewRect = NSRect(origin: .zero, size: frame.size)
+        let view = SelectionView(frame: viewRect)
         window.contentView = view
         
         // 必须 makeKey 才能接收键盘事件

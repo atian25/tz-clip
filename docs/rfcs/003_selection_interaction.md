@@ -1,6 +1,6 @@
 # RFC 003: 选区交互优化 (Selection Interaction)
 
-Status: Partially Implemented (Core logic done, Visual Aids pending)
+Status: Partially Implemented (Core & Size/Snap done, Crosshair pending)
 
 ## 1. 背景与目标
 当前的选区功能仅支持“一次性拖拽创建”，一旦创建完成无法修改，只能重新绘制。为了提供专业级的截图体验，必须支持对已有选区的**移动 (Move)** 和 **调整大小 (Resize)**，并提供必要的**视觉辅助 (Visual Aids)**。
@@ -59,12 +59,19 @@ enum Handle {
     *   **反馈**: 显示一条贯穿屏幕的辅助线（Snap Guide），提示用户已吸附。
 *   **覆盖**: 按住 `Cmd` 键可以临时禁用吸附功能（可选）。
 
+### 3.3 十字辅助线 (Crosshair Guides)
+*   **内容**: 显示跟随鼠标的水平和垂直贯穿线（全屏长度）。
+*   **时机**: 仅在 `idle` 状态（准备创建选区）时显示。一旦开始创建或选区已存在，十字线隐藏。
+*   **样式**: 细实线或虚线，半透明白色/灰色，不干扰视线。
+*   **坐标**: 可选在中心显示当前 (x, y) 坐标（本次暂不实现坐标数值显示，仅显示线条）。
+
 ## 4. 技术实现细节
 
 ### 4.1 绘制与交互
 *   **手柄绘制**: 在 `draw(_:)` 方法中，当状态为 `selected` 时，在选区的 8 个关键点绘制白色圆点。
 *   **命中检测**: 定义 `func handle(at point: NSPoint) -> Handle?`，优先检测手柄。
 *   **尺寸绘制**: 在 `draw(_:)` 中绘制 `NSAttributedString`。
+*   **十字线绘制**: 在 `draw(_:)` 中根据 `cursorLocation` 绘制路径。
 
 ### 4.2 吸附算法
 在 `mouseDragged` 更新位置时介入：
@@ -79,6 +86,7 @@ enum Handle {
     *   [x] 实现光标更新。
     *   [x] 实现拖拽逻辑 (Move/Resize)。
     *   [x] 实现键盘微调。
-2.  **Visual Aids (待办)**:
-    *   [ ] 实现尺寸显示。
-    *   [ ] 实现吸附逻辑与辅助线。
+2.  **Visual Aids (进行中)**:
+    *   [x] 实现尺寸显示。
+    *   [x] 实现吸附逻辑与辅助线。
+    *   [ ] 实现十字辅助线 (Crosshair Guides)。

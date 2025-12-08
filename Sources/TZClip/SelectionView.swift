@@ -31,6 +31,9 @@ class SelectionView: NSView {
     private var snappedEdges: Set<Int> = [] // 0:minX, 1:maxX, 2:minY, 3:maxY
     private let snapThreshold: CGFloat = 10.0
     
+    // Crosshair
+    private var cursorLocation: NSPoint?
+    
     // Configuration
     private let handleSize: CGFloat = 8.0
     private let overlayColor = NSColor.black.withAlphaComponent(0.5)
@@ -58,7 +61,7 @@ class SelectionView: NSView {
             removeTrackingArea(trackingArea)
         }
         
-        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow]
+        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeAlways]
         trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
         addTrackingArea(trackingArea!)
     }
@@ -71,6 +74,11 @@ class SelectionView: NSView {
         // Draw Overlay
         overlayColor.setFill()
         dirtyRect.fill()
+        
+        // Draw Crosshair if idle
+        if case .idle = state, let p = cursorLocation {
+            drawCrosshair(at: p)
+        }
         
         if !selectionRect.isEmpty {
             // Cut out selection
@@ -100,6 +108,23 @@ class SelectionView: NSView {
             // Draw Size Indicator
             drawSizeIndicator()
         }
+    }
+    
+    private func drawCrosshair(at point: NSPoint) {
+        let color = NSColor.white.withAlphaComponent(0.3)
+        color.setStroke()
+        let path = NSBezierPath()
+        path.lineWidth = 1.0
+        
+        // Horizontal
+        path.move(to: NSPoint(x: bounds.minX, y: point.y))
+        path.line(to: NSPoint(x: bounds.maxX, y: point.y))
+        
+        // Vertical
+        path.move(to: NSPoint(x: point.x, y: bounds.minY))
+        path.line(to: NSPoint(x: point.x, y: bounds.maxY))
+        
+        path.stroke()
     }
     
     private func drawHandles() {
@@ -231,9 +256,17 @@ class SelectionView: NSView {
         let p = convert(event.locationInWindow, from: nil)
         
         if selectionRect.isEmpty {
+            // 如果在 idle 状态，记录光标位置并重绘以显示十字线
+        if case .idle = state {
+            cursorLocation = p
+            needsDisplay = true
+        }
             NSCursor.crosshair.set()
             return
         }
+        
+        // 既然 selectionRect 不为空，说明已经有选区了，清空 cursorLocation
+        cursorLocation = nil
         
         if let h = handle(at: p) {
             cursorForHandle(h).set()
@@ -242,6 +275,12 @@ class SelectionView: NSView {
         } else {
             NSCursor.crosshair.set()
         }
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        cursorLocation = nil
+        needsDisplay = true
+        super.mouseExited(with: event)
     }
     
     private func cursorForHandle(_ handle: Handle) -> NSCursor {
@@ -280,6 +319,7 @@ class SelectionView: NSView {
         // Otherwise start creating
         state = .creating
         selectionRect = .zero
+        cursorLocation = nil // Stop showing crosshair
         hideToolbar()
         needsDisplay = true
     }
