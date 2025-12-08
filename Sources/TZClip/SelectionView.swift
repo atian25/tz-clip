@@ -84,8 +84,9 @@ class SelectionView: NSView {
         super.draw(dirtyRect)
         
         // Draw Overlay
-        overlayColor.setFill()
-        dirtyRect.fill()
+        // Removed semi-transparent background as per user request
+        // overlayColor.setFill()
+        // dirtyRect.fill()
         
         // Draw Window Highlight if idle and present
         if case .idle = state {
@@ -103,9 +104,6 @@ class SelectionView: NSView {
             */
             
             if let highlightRect = highlightWindowRect {
-                highlightColor.setFill()
-                highlightRect.fill()
-                
                 highlightBorderColor.setStroke()
                 let path = NSBezierPath(rect: highlightRect)
                 path.lineWidth = 2.0
@@ -119,13 +117,6 @@ class SelectionView: NSView {
         }
         
         if !selectionRect.isEmpty {
-            // Cut out selection
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current?.compositingOperation = .clear
-            NSColor.clear.setFill()
-            selectionRect.fill()
-            NSGraphicsContext.restoreGraphicsState()
-            
             // Draw Border
             borderColor.setStroke()
             let path = NSBezierPath(rect: selectionRect)

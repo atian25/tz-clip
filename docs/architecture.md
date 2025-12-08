@@ -13,13 +13,35 @@
 ### 1.2 权限调试痛点 (Permissions)
 *   **问题**: macOS 的屏幕录制 (Screen Recording) 和辅助功能 (Accessibility) 权限是绑定到 **Bundle ID + 代码签名** 的。每次重新编译（特别是非 Xcode 环境下的临时构建）可能会改变二进制签名，导致系统认为是一个新应用，频繁弹窗或权限失效。
 *   **解决方案**:
-    1.  **固定代码签名 (Code Signing)**: 在构建脚本中，显式执行 `codesign` 命令，使用一个自签名的证书（Ad-hoc 或本地开发证书）对二进制文件进行签名，并保持 Entitlements 文件一致。
-    2.  **TCC 数据库重置 (Fallback)**: 如果遇到顽固的权限问题，提供一个脚本命令 `make reset-perms`，使用 `tccutil reset ScreenCapture [BundleID]` 快速重置。
-    3.  **调试模式**: 在开发阶段，可以通过 `Info.plist` 或启动参数注入，跳过部分非核心的权限检查逻辑，防止阻塞 UI 调试。
+    1.  **应用打包 (App Bundling)**: 提供 `scripts/package.sh` 脚本，将二进制文件封装为标准的 `.app` 包（包含 `Info.plist` 和资源），确保 Bundle ID 稳定。
+    2.  **固定代码签名 (Code Signing)**: 在构建脚本中，显式执行 `codesign` 命令，使用一个自签名的证书（Ad-hoc 或本地开发证书）对二进制文件进行签名，并保持 Entitlements 文件一致。
+    3.  **TCC 数据库重置 (Fallback)**: 如果遇到顽固的权限问题，提供一个脚本命令 `make reset-perms`，使用 `tccutil reset ScreenCapture [BundleID]` 快速重置。
+    4.  **运行时检查**: 使用 `CGPreflightScreenCaptureAccess()` 预检权限，如果缺失则通过 `NSAlert` 引导用户前往系统设置，避免静默失败。
 
 ## 2. 核心架构模式 (Core Architecture)
 
-### 2.1 应用生命周期
+### 2.1 模块与类职责
+虽然目前所有代码都在 `Sources/TZClip` 下，但逻辑上分为以下几个核心模块：
+
+*   **App Lifecycle (`AppDelegate`, `main.swift`)**:
+    *   负责应用启动、菜单栏图标 (`NSStatusItem`) 管理、全局快捷键监听。
+    *   协调截图会话的开始与结束（管理 `OverlayWindowController` 实例）。
+*   **Window Management (`OverlayWindowController`)**:
+    *   为每个屏幕创建一个全屏无边框窗口。
+    *   负责窗口级别的配置（Level, Background Color, Behavior）。
+*   **Selection Logic (`SelectionView`)**:
+    *   核心视图，处理所有鼠标交互（点击、拖拽、悬停）。
+    *   维护交互状态机 (`InteractionState`: idle, creating, selected, moving, resizing)。
+    *   负责绘制选区、手柄、十字光标和高亮框。
+*   **Data Provider (`WindowInfoProvider`)**:
+    *   **职责**: 封装 `ScreenCaptureKit`，提供当前屏幕的窗口信息。
+    *   **核心能力**: 
+        *   获取并过滤窗口列表（排除系统窗口如 Dock/Wallpaper）。
+        *   **Z-Order 排序**: 严格按 Layer 降序 + Index 升序排列，确保命中测试符合视觉直觉。
+        *   **智能容器识别**: 将子窗口（如内容区）映射回应用的主容器窗口。
+        *   **坐标转换**: 处理 Quartz (左上原点) 到 Cocoa (左下原点) 的坐标系转换。
+
+### 2.2 应用生命周期
 *   **Entry Point**: `@main` (SwiftUI App) 或 `NSApplicationDelegate`。
 *   **无停靠栏模式**: `LSUIElement = YES` (Info.plist)，应用启动后不显示在 Dock 上。
 *   **菜单栏常驻 (Status Bar)**:
@@ -41,6 +63,12 @@
     *   **实现**: 在 `SelectionView` 和 `AppDelegate` 双重监听，确保无论焦点在哪里都能响应。
 
 ### 2.3 交互细节 (Interaction)
+*   **混合模式 (Hybrid Mode)**:
+    *   **Idle 状态**: 
+        *   同时支持 **窗口识别** (Hover) 和 **自由选区** (Drag)。
+        *   鼠标移动时，通过 `WindowInfoProvider` 实时检测下方窗口并高亮（仅边框）。
+        *   **点击**: 立即吸附选中高亮窗口，状态流转至 `selected`。
+        *   **拖拽**: 忽略窗口高亮，开始绘制橡胶圈，状态流转至 `creating`。
 *   **工具栏事件分发**:
     *   由于 `SelectionView` 覆盖全屏，工具栏作为子视图容易被遮挡或事件被父视图拦截。
     *   **HitTest**: 必须重写 `SelectionView.hitTest`，优先检测并返回工具栏视图，确保按钮可点击。
@@ -48,9 +76,9 @@
     *   点击选区外部不应立即重置选区，必须配合拖拽检测（阈值 > 3px）才开始新选区，防止用户误点导致选区丢失。
 
 ### 2.4 模块化 (Modularity)
-*   **Core**: 包含截图引擎、窗口管理、权限管理等底层逻辑。
-*   **UI**: 包含 SwiftUI 视图、工具栏、标注画板。
-*   **Features**: 独立的业务模块（如 PinWindow, OCRService）。
+*   **Core**: 包含截图引擎 (`SCShareableContent` 封装)、窗口管理、权限管理等底层逻辑。
+*   **UI**: 包含 `SelectionView`、工具栏 (`NSStackView` 实现)、标注画板。
+*   **Features**: 独立的业务模块（如 PinWindow, OCRService - 待开发）。
 
 ## 3. 关键技术决策
 *   **最低版本**: macOS 13.0 (Ventura)。
