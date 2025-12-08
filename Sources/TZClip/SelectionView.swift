@@ -56,6 +56,11 @@ class SelectionView: NSView {
         return true
     }
     
+    // Allow the view to handle mouse events immediately, even if the window is not key
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+    
     override var isFlipped: Bool {
         return false
     }
