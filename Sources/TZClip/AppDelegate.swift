@@ -33,7 +33,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupGlobalShortcuts()
         
         NotificationCenter.default.addObserver(forName: .stopCapture, object: nil, queue: .main) { [weak self] _ in
-            self?.stopCapture()
+            Task { @MainActor in
+                self?.stopCapture()
+            }
         }
     }
     
