@@ -10,35 +10,45 @@ Status: Partially Implemented (MVP Tools & Properties Done)
 *   提供直观、悬浮的工具栏，跟随选区位置。
 *   支持基础图形绘制（矩形、椭圆、直线、箭头）。
 *   支持自由绘制（画笔）和文本输入。
+*   支持高级标注（序号、马赛克）。
 *   支持对已绘制内容的二次编辑（移动、缩放、属性修改）。
-*   提供次级属性面板，用于调整颜色、粗细、字体样式。
+*   提供**次级属性面板**，用于精细调整颜色、粗细、透明度等属性。
 
 ## 2. 核心功能设计 (Core Features)
 
 ### 2.1 主工具栏 (Main Toolbar)
 *   **位置**: 默认显示在选区右下角外部。如果底部空间不足，自动调整至选区内部底部或上方。
-*   **工具列表**:
-    1.  **选择 (Select)**: 用于选中、移动、调整已绘制的图形。
-    2.  **矩形 (Rectangle)**: 绘制矩形框。
-    3.  **椭圆 (Ellipse)**: 绘制椭圆/圆。
-    4.  **直线 (Line)**: 绘制直线。
-    5.  **箭头 (Arrow)**: 绘制带箭头的直线。
-    6.  **画笔 (Pen)**: 自由手绘路径。
+*   **样式**: 圆角矩形背景，图标排列，支持 Hover 效果。
+*   **工具列表 (Tools)** (从左至右):
+    1.  **矩形 (Rectangle)**: 绘制矩形框。
+    2.  **椭圆 (Ellipse)**: 绘制椭圆/圆。
+    3.  **直线 (Line)**: 绘制直线。
+    4.  **箭头 (Arrow)**: 绘制带箭头的直线。
+    5.  **画笔 (Pen)**: 自由手绘路径。
+    6.  **马赛克 (Mosaic)**: 区域模糊/像素化。
     7.  **文字 (Text)**: 插入文本标签。
-    8.  **马赛克 (Mosaic)**: (Phase 2) 区域模糊。
-*   **操作列表**:
-    1.  **撤销 (Undo)**: 撤销上一步绘制。
-    2.  **复制 (Copy)**: 复制选区内容（含标注）到剪贴板。
-    3.  **保存 (Save)**: 保存选区内容为文件。
-    4.  **贴图 (Pin)**: (Phase 4) 将截图固定在屏幕上。
-    5.  **关闭 (Close)**: 退出截图。
+    8.  **序号 (Counter)**: 自动递增的圆形数字标记 (①, ②, ③...)，用于步骤说明。
+*   **操作列表 (Actions)** (分隔符后):
+    1.  **贴图 (Pin)**: 将截图选区作为悬浮窗固定在屏幕顶层。
+    2.  **撤销 (Undo)**: 撤销上一步绘制。
+    3.  **OCR**: 识别并提取文字。
+    4.  **关闭 (Close)**: 取消截图 (`Esc`)。
+    5.  **长截图 (Scroll)**: 滚动截屏。
+    6.  **保存 (Save)**: 保存选区内容为文件。
+    7.  **确认 (Confirm)**: 复制选区内容到剪贴板并退出 (`Enter`)。
 
-### 2.2 属性面板 (Properties Panel)
-*   **触发**: 当选择了某个绘图工具，或选中了某个已存在的标注时显示。
+### 2.2 次级属性面板 (Secondary Properties Bar)
+*   **触发**: 当选择了某个绘图工具（不含 Text/Mosaic/Eraser），或选中了某个已存在的标注时显示。
+*   **位置**: 紧贴主工具栏下方，与主工具栏左对齐或居中对齐。
+*   **布局**: 分为两行或紧凑排列。
 *   **内容**:
-    *   **颜色**: 预设一组常用颜色（红、黄、绿、蓝、白、黑等）。
-    *   **粗细 (Size)**: S (2px), M (4px), L (8px)。
-    *   **文字样式**: 仅在文字工具下显示，如 **加粗 (Bold)**、字号。
+    *   **尺寸与样式**:
+        *   **粗细 (Stroke Width)**: 提供滑块 (Slider) 或分档按钮 (S/M/L)，并显示具体数值 (px)。
+        *   **透明度 (Opacity)**: 提供滑块 (0-100%)，用于调整描边或填充的不透明度。
+    *   **颜色选择 (Color Picker)**:
+        *   **预设色块**: 提供一组高频使用的颜色（红、橙、黄、绿、蓝、紫、黑、白）。
+        *   **当前颜色**: 显示当前选中颜色的预览。
+        *   **调色盘**: 点击可打开系统调色盘进行自定义。
 
 ### 2.3 交互逻辑 (Interaction)
 *   **绘制 (Creating)**:
@@ -60,7 +70,7 @@ SelectionView (NSView)
 ├── AnnotationOverlayView (NSView)
 │   └── (Custom Draw Loop via draw(_:))
 ├── AnnotationToolbar (NSView - Subview or Sibling)
-└── AnnotationPropertiesView (NSView)
+└── AnnotationPropertiesView (NSView - Secondary Toolbar)
 ```
 
 ### 3.2 核心类设计
@@ -77,12 +87,12 @@ SelectionView (NSView)
     *   `mouseDown/dragged/Up`: 处理绘制和编辑手势。
 
 #### `Annotation` (Protocol)
-*   **属性**: `id`, `type`, `color`, `lineWidth`, `bounds`。
+*   **属性**: `id`, `type`, `color`, `lineWidth`, `opacity`, `bounds`。
 *   **方法**:
     *   `draw(in context: CGContext)`
     *   `contains(point: CGPoint) -> Bool`
     *   `move(by translation: CGPoint) -> Annotation`
-*   **实现**: `RectangleAnnotation`, `EllipseAnnotation`, `LineAnnotation`, `TextAnnotation`, etc.
+*   **实现**: `RectangleAnnotation`, `EllipseAnnotation`, `LineAnnotation`, `TextAnnotation`, `CounterAnnotation` 等。
 
 #### `AnnotationToolbar` & `PropertiesView`
 *   纯 UI 组件，通过 `Delegate` 或 `Closure` 与 `SelectionView` 通信。
@@ -103,38 +113,18 @@ SelectionView (NSView)
     - 实现点击命中测试 (`Hit Test`)。
     - 实现拖拽移动。
     - 实现 Resize Handles 和变形逻辑。
-- [x] **Step 5: 属性面板**
-    - 实现 `AnnotationPropertiesView`。
-    - 联动颜色和粗细调整。
-- [x] **Step 6: 文字工具**
+- [ ] **Step 5: 属性面板升级 (Current Task)**
+    - [ ] 重构 `AnnotationPropertiesView` UI。
+    - [ ] 增加**透明度**支持。
+    - [ ] 增加**粗细滑块**支持。
+- [ ] **Step 6: 高级标注工具 (Phase 2)**
+    - [ ] 实现**序号 (Counter)** 工具。
+    - [ ] 实现**马赛克 (Mosaic)** 工具。
+- [ ] **Step 7: 文字工具完善**
     - 集成 `NSTextView` 进行文本输入。
     - 渲染文本标注。
-- [ ] **Step 7: 操作落地**
-    - 实现复制 (Copy) 和保存 (Save) 功能 (Phase 2)。
-
-## 6. 实施状态 (Implementation Status)
-
-### 6.1 已完成 (Completed)
-- **AnnotationToolbar**: 
-  - 实现了所有 MVP 工具按钮（选择、矩形、椭圆、直线、箭头、画笔、文字）。
-  - 实现了 HoverButton 效果。
-- **AnnotationPropertiesView**:
-  - 实现了动态属性面板（颜色、粗细、加粗）。
-  - 支持与选中工具或图形的双向同步。
-- **AnnotationOverlayView**:
-  - 实现了所有 MVP 图形的绘制与交互。
-  - 实现了 `Select` 模式，支持点击选中、拖拽移动、拖拽把手变形。
-  - 实现了 `Shift` 键约束（正方形/正圆/45度角）。
-  - 实现了 `Delete` 键删除。
-  - 实现了文本输入的创建与完成。
-- **SelectionView Integration**:
-  - 实现了工具栏与属性面板的自动定位与显示。
-  - 实现了交互状态机管理。
-
-### 6.2 待实现 (Pending)
-- **Actions**:
-  - 复制 (Copy) 到剪贴板。
-  - 保存 (Save) 到文件。
-- **Future Tools**:
-  - 马赛克 (Mosaic)。
-  - 贴图 (Pin)。
+- [ ] **Step 8: 操作落地**
+    - 实现复制 (Copy) 和保存 (Save) 功能。
+    - 实现贴图 (Pin) 功能 (Phase 2)。
+    - 实现 OCR (Phase 3)。
+    - 实现长截图 (Phase 3)。
