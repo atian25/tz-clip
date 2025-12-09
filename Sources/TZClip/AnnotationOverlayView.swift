@@ -24,6 +24,12 @@ class AnnotationOverlayView: NSView {
     var currentTool: AnnotationType? {
         didSet {
             window?.invalidateCursorRects(for: self)
+            
+            // If we switch tools (or cancel), we must end any active text editing session.
+            if let _ = activeTextView {
+                endTextEditing()
+            }
+            
             if currentTool != .select {
                 selectedAnnotationID = nil
             }

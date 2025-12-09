@@ -32,9 +32,11 @@ struct RectangleAnnotation: Annotation {
     var bounds: CGRect { rect }
     
     func draw(in context: CGContext) {
+        context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
         context.stroke(rect)
+        context.restoreGState()
     }
     
     func contains(point: CGPoint) -> Bool {
@@ -61,9 +63,11 @@ struct EllipseAnnotation: Annotation {
     var bounds: CGRect { rect }
     
     func draw(in context: CGContext) {
+        context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
         context.strokeEllipse(in: rect)
+        context.restoreGState()
     }
     
     func contains(point: CGPoint) -> Bool {
@@ -96,12 +100,14 @@ struct LineAnnotation: Annotation {
     }
     
     func draw(in context: CGContext) {
+        context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
         context.setLineCap(.round)
         context.move(to: startPoint)
         context.addLine(to: endPoint)
         context.strokePath()
+        context.restoreGState()
     }
     
     func contains(point: CGPoint) -> Bool {
@@ -139,6 +145,7 @@ struct ArrowAnnotation: Annotation {
     }
     
     func draw(in context: CGContext) {
+        context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
         context.setLineCap(.round)
@@ -167,6 +174,7 @@ struct ArrowAnnotation: Annotation {
         context.move(to: endPoint)
         context.addLine(to: p2)
         context.strokePath()
+        context.restoreGState()
     }
     
     func contains(point: CGPoint) -> Bool {
@@ -229,6 +237,7 @@ struct PenAnnotation: Annotation {
     func draw(in context: CGContext) {
         guard points.count > 1 else { return }
         
+        context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
         context.setLineCap(.round)
@@ -239,6 +248,7 @@ struct PenAnnotation: Annotation {
             context.addLine(to: points[i])
         }
         context.strokePath()
+        context.restoreGState()
     }
     
     func contains(point: CGPoint) -> Bool {
@@ -283,8 +293,16 @@ struct TextAnnotation: Annotation {
     }
     
     func draw(in context: CGContext) {
-        NSGraphicsContext.saveGraphicsState()
-        let nsContext = NSGraphicsContext(cgContext: context, flipped: true)
+        context.saveGState()
+        
+        // Ensure we are in Fill mode for text, to prevent any residual Stroke settings
+        // from making the text look bold/outlined.
+        context.setTextDrawingMode(.fill)
+        
+        // Use a non-flipped context. The view's coordinate system should handle it.
+        // If the view is not flipped, and we use flipped: true here, it might mess up.
+        // Assuming the context passed in is already set up for the view's coordinate system.
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.current = nsContext
         
         let attributes: [NSAttributedString.Key: Any] = [
@@ -295,7 +313,7 @@ struct TextAnnotation: Annotation {
         // Text drawing
         text.draw(at: origin, withAttributes: attributes)
         
-        NSGraphicsContext.restoreGraphicsState()
+        context.restoreGState()
     }
     
     func contains(point: CGPoint) -> Bool {
