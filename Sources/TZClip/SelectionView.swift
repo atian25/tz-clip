@@ -814,14 +814,116 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         case .close:
             handleCancel()
         case .save:
-            // Placeholder
-            print("Save requested")
-            // TODO: Implement save
+            guard let image = generateFinalImage() else { return }
+            saveImageToFile(image)
         case .copy:
-            // Placeholder
-            print("Copy requested")
-            // TODO: Implement copy
+            guard let image = generateFinalImage() else { return }
+            copyImageToClipboard(image)
+            // Feedback?
             NotificationCenter.default.post(name: .stopCapture, object: nil)
+        }
+    }
+    
+    // MARK: - Image Generation & Output
+    
+    private func generateFinalImage() -> NSImage? {
+        guard !selectionRect.isEmpty, let window = self.window else { return nil }
+        
+        // 1. Capture the screen content below our window
+        // Convert selectionRect to Screen Coordinates (Cocoa)
+        var screenRect = window.convertToScreen(selectionRect)
+        
+        // Convert to Quartz Coordinates (Top-Left origin)
+        // Assume screen 0 is the "main" screen for height reference, but actually
+        // CGWindowListCreateImage coordinates are relative to the unified display space.
+        // NSScreen.screens.first is usually the one with (0,0).
+        // A robust way involves flipping Y based on the primary screen height.
+        
+        guard let primaryScreen = NSScreen.screens.first else { return nil }
+        let primaryHeight = primaryScreen.frame.height
+        
+        // Quartz Y = PrimaryHeight - (CocoaY + Height)
+        let quartzY = primaryHeight - (screenRect.origin.y + screenRect.height)
+        let captureRect = CGRect(x: screenRect.origin.x, y: quartzY, width: screenRect.width, height: screenRect.height)
+        
+        // Capture
+        guard let cgImage = CGWindowListCreateImage(
+            captureRect,
+            .optionOnScreenBelowWindow,
+            CGWindowID(window.windowNumber),
+            .bestResolution
+        ) else {
+            print("Failed to capture screen image")
+            return nil
+        }
+        
+        // 2. Create Final Image
+        // We will combine the captured image and annotations into a new NSImage.
+        
+        let finalImage = NSImage(size: selectionRect.size)
+        finalImage.lockFocus()
+        
+        // Draw Base Image
+        // We need to draw the CGImage. NSImage(cgImage:...)
+        let baseNSImage = NSImage(cgImage: cgImage, size: selectionRect.size)
+        baseNSImage.draw(in: NSRect(origin: .zero, size: selectionRect.size),
+                         from: NSRect(origin: .zero, size: selectionRect.size),
+                         operation: .copy,
+                         fraction: 1.0)
+        
+        // Draw Annotations
+        // We can get the current context (which is the NSImage context)
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            annotationOverlay?.renderAnnotations(in: ctx)
+        }
+        
+        finalImage.unlockFocus()
+        
+        return finalImage
+    }
+    
+    private func copyImageToClipboard(_ image: NSImage) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
+    }
+    
+    private func saveImageToFile(_ image: NSImage) {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.png, .jpeg]
+        savePanel.canCreateDirectories = true
+        savePanel.nameFieldStringValue = "Screenshot \(Date().formatted(date: .numeric, time: .standard)).png"
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: ".")
+        
+        // We need to present this. Since we are in a window controller/view...
+        // But our window is level .screenSaver, save panel might be hidden behind?
+        // We should temporarily elevate or hide our window?
+        // Actually, saving usually implies we are done.
+        // But the user might want to save and CONTINUE?
+        // "Confirm" (Copy) exits. "Save" might also exit?
+        // Standard behavior: Save -> Dialog -> Save -> Exit.
+        
+        // Let's hide our window temporarily for the save panel?
+        // Or ensure save panel is above.
+        savePanel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.screenSaverWindow)) + 1)
+        
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                if let tiffData = image.tiffRepresentation,
+                   let bitmapRep = NSBitmapImageRep(data: tiffData) {
+                    
+                    let props: [NSBitmapImageRep.PropertyKey: Any] = [:]
+                    // Determine type based on extension
+                    let fileType: NSBitmapImageRep.FileType = url.pathExtension.lowercased() == "jpg" ? .jpeg : .png
+                    
+                    if let data = bitmapRep.representation(using: fileType, properties: props) {
+                        try? data.write(to: url)
+                    }
+                }
+                // Exit after save
+                NotificationCenter.default.post(name: .stopCapture, object: nil)
+            }
         }
     }
     

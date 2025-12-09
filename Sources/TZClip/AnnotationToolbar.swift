@@ -83,7 +83,6 @@ class AnnotationToolbar: NSView {
     
     private func setupButtons() {
         let tools: [(String, AnnotationType)] = [
-            ("↖", .select), // Select tool
             ("□", .rectangle),
             ("○", .ellipse),
             ("╱", .line),
@@ -175,11 +174,12 @@ class AnnotationToolbar: NSView {
     }
     
     func selectTool(_ tool: AnnotationType) {
+        selectedTool = tool
         let tag = getTag(for: tool)
         for btn in toolButtons {
-            if btn.tag == tag {
+            // Only highlight if tool is NOT .select (since .select button is removed)
+            if tool != .select && btn.tag == tag {
                 btn.isSelected = true
-                selectedTool = tool
             } else {
                 btn.isSelected = false
             }
@@ -187,15 +187,6 @@ class AnnotationToolbar: NSView {
     }
     
     @objc private func toolButtonTapped(_ sender: HoverButton) {
-        // Reset all tool buttons state
-        for btn in toolButtons {
-            btn.isSelected = false
-        }
-        
-        // Highlight selected
-        sender.isSelected = true
-        
-        // Notify delegate
         var type: AnnotationType?
         switch sender.tag {
         case 100: type = .select
@@ -208,10 +199,30 @@ class AnnotationToolbar: NSView {
         default: break
         }
         
-        if let type = type {
-            selectedTool = type
-            delegate?.didSelectTool(type)
+        guard let tappedType = type else { return }
+        
+        // Toggle Logic:
+        // If the tapped tool is already selected, deselect it (go back to .select mode).
+        // Otherwise, select the new tool.
+        
+        let newTool: AnnotationType
+        if selectedTool == tappedType {
+            newTool = .select
+        } else {
+            newTool = tappedType
         }
+        
+        // Update UI
+        for btn in toolButtons {
+            if newTool != .select && btn.tag == getTag(for: newTool) {
+                btn.isSelected = true
+            } else {
+                btn.isSelected = false
+            }
+        }
+        
+        selectedTool = newTool
+        delegate?.didSelectTool(newTool)
     }
     
     @objc private func actionButtonTapped(_ sender: NSButton) {

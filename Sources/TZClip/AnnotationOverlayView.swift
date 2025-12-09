@@ -179,6 +179,21 @@ class AnnotationOverlayView: NSView {
     
     // MARK: - Public Methods
     
+    /// Renders only the committed annotations into the provided context.
+    /// Used for generating the final output image.
+    func renderAnnotations(in context: CGContext) {
+        context.saveGState()
+        // Ensure we are drawing in the view's coordinate system if needed,
+        // but typically the context passed in will be set up for the image size.
+        // Since annotations store coordinates relative to the view/window (which matches selection rect),
+        // we should be fine if the context represents the selection rect.
+        
+        for annotation in annotations {
+            annotation.draw(in: context)
+        }
+        context.restoreGState()
+    }
+    
     func undo() {
         if !annotations.isEmpty {
             annotations.removeLast()
