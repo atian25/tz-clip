@@ -41,10 +41,19 @@ class OverlayWindowController: NSWindowController {
         window.contentView = view
         
         // 必须 makeKey 才能接收键盘事件
-        window.makeKeyAndOrderFront(nil)
-        // 显式将 View 设为第一响应者
-        window.makeFirstResponder(view)
-        print("Overlay window ordered front")
+        // 注意：我们不要在这里调用 makeKeyAndOrderFront，因为这可能会在多屏幕时导致焦点抢夺混乱。
+        // 我们会在 AppDelegate 中根据鼠标位置决定谁是 Key。
+        // 但是，为了确保窗口能够立即接收事件，我们这里只 orderFront，或者不做操作，由 AppDelegate 统一管理。
+        // 不过，OverlayWindowController 初始化时通常希望窗口就绪。
+        
+        // 关键修复：允许非激活应用时的点击事件穿透到窗口
+        // 但我们已经设置了 acceptsFirstMouse 在 View 层。
+        // 问题可能在于 ActivationPolicy 的切换时机。
+        
+        // 我们只在 AppDelegate 中统一调用 makeKeyAndOrderFront
+        // window.makeKeyAndOrderFront(nil) 
+        // window.makeFirstResponder(view)
+        print("Overlay window initialized")
     }
     
     required init?(coder: NSCoder) {

@@ -134,15 +134,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             overlayControllers.append(controller)
             
+            // 关键：根据鼠标位置决定哪个窗口是 Key Window
             if NSMouseInRect(mouseLocation, screen.frame, false) {
                 print("Mouse on screen: \(screen.localizedName)")
+                // 强制提升层级并激活
                 controller.window?.makeKeyAndOrderFront(nil)
+                controller.window?.makeFirstResponder(controller.window?.contentView)
             } else {
                 controller.window?.orderFront(nil)
             }
         }
         
-        // 强制激活
+        // 强制激活应用，确保第一次点击就能响应
         NSApp.activate(ignoringOtherApps: true)
     }
     

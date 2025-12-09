@@ -16,7 +16,7 @@ enum Handle: CaseIterable {
     case bottomLeft, bottom, bottomRight
 }
 
-class SelectionView: NSView {
+class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDelegate {
     
     // MARK: - Properties
     
@@ -47,7 +47,9 @@ class SelectionView: NSView {
     private let borderColor = NSColor.white
     private let borderWidth: CGFloat = 1.0
     
-    private var toolbarView: NSStackView?
+    private var toolbarView: AnnotationToolbar?
+    private var propertiesView: AnnotationPropertiesView?
+    private var annotationOverlay: AnnotationOverlayView?
     
     // Tracking area for cursor updates
     private var trackingArea: NSTrackingArea?
@@ -83,26 +85,8 @@ class SelectionView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         
-        // Draw Overlay
-        // Removed semi-transparent background as per user request
-        // overlayColor.setFill()
-        // dirtyRect.fill()
-        
         // Draw Window Highlight if idle and present
         if case .idle = state {
-            // DEBUG: Draw ALL detected windows to check coordinates
-            /*
-            if let provider = windowProvider, let window = self.window {
-                NSColor.red.withAlphaComponent(0.5).setStroke() // 增加透明度以便看清
-                for w in provider.allWindows() {
-                     let r = window.convertFromScreen(w.frame)
-                     let path = NSBezierPath(rect: r)
-                     path.lineWidth = 1.0
-                     path.stroke()
-                }
-            }
-            */
-            
             if let highlightRect = highlightWindowRect {
                 highlightBorderColor.setStroke()
                 let path = NSBezierPath(rect: highlightRect)
@@ -267,6 +251,18 @@ class SelectionView: NSView {
         if let toolbar = toolbarView, NSPointInRect(point, toolbar.frame) {
             return super.hitTest(point)
         }
+        
+        if let props = propertiesView, !props.isHidden, NSPointInRect(point, props.frame) {
+            return super.hitTest(point)
+        }
+        
+        // Allow interaction with annotation overlay if tool is active
+        if let overlay = annotationOverlay, !overlay.isHidden {
+            if overlay.currentTool != nil && NSPointInRect(point, overlay.frame) {
+                return overlay
+            }
+        }
+        
         return self
     }
     
@@ -292,11 +288,6 @@ class SelectionView: NSView {
                 // Window Detection
                 // Disable if Command key is pressed
                 if !event.modifierFlags.contains(.command), let provider = windowProvider {
-                    // Convert view point to screen point for hit testing
-                    // window?.convertPoint(toScreen: p) // 10.12+
-                    // Since OverlayWindow fills the screen, we can use NSEvent.mouseLocation or convert manually
-                    // But NSEvent.mouseLocation is global.
-                    
                     let globalMouseLocation = NSEvent.mouseLocation
                     if let detected = provider.window(at: globalMouseLocation) {
                         // Convert detected global rect to view local rect
@@ -350,10 +341,6 @@ class SelectionView: NSView {
         
         let p = convert(event.locationInWindow, from: nil)
         
-        // DEBUG: Check windows at this point
-        // let globalLocation = NSEvent.mouseLocation
-        // windowProvider?.debugWindows(at: globalLocation)
-        
         startPoint = p
         lastMouseLocation = p
         
@@ -373,16 +360,12 @@ class SelectionView: NSView {
             }
         } else {
             // Check for Window Selection (Hybrid Mode)
-            // If we have a highlighted window, we MIGHT select it if this is a click,
-            // or we MIGHT ignore it if this becomes a drag.
             if let highlight = highlightWindowRect, !event.modifierFlags.contains(.command) {
                 pendingWindowRect = highlight
             }
         }
         
         // Always start creating initially. 
-        // If it's a click on a window, mouseUp will handle it.
-        // If it's a drag, mouseDragged will handle it (and clear pendingWindowRect).
         state = .creating
         selectionRect = .zero
         cursorLocation = nil // Stop showing crosshair
@@ -436,6 +419,11 @@ class SelectionView: NSView {
         }
         
         needsDisplay = true
+        
+        // Update overlay frame if it exists
+        if let overlay = annotationOverlay {
+            overlay.frame = selectionRect
+        }
     }
     
     override func mouseUp(with event: NSEvent) {
@@ -446,10 +434,12 @@ class SelectionView: NSView {
                 // Confirm window selection
                 selectionRect = windowRect
                 state = .selected
+                setupAnnotationOverlay()
                 showToolbar()
                 pendingWindowRect = nil
             } else if selectionRect.width > 10 && selectionRect.height > 10 {
                  state = .selected
+                 setupAnnotationOverlay()
                  showToolbar()
              } else {
                  state = .idle
@@ -459,6 +449,11 @@ class SelectionView: NSView {
             // Moving or resizing finished
             state = .selected
             NSCursor.openHand.set()
+            if let overlay = annotationOverlay {
+                overlay.frame = selectionRect
+            } else {
+                setupAnnotationOverlay()
+            }
             showToolbar()
         }
         
@@ -466,6 +461,47 @@ class SelectionView: NSView {
         lastMouseLocation = nil
         pendingWindowRect = nil
         needsDisplay = true
+    }
+    
+    private func setupAnnotationOverlay() {
+        if annotationOverlay == nil {
+            let overlay = AnnotationOverlayView(frame: selectionRect)
+            addSubview(overlay)
+            annotationOverlay = overlay
+        } else {
+            annotationOverlay?.frame = selectionRect
+            annotationOverlay?.isHidden = false
+        }
+        
+        annotationOverlay?.onSelectionChange = { [weak self] annotation in
+            guard let self = self, let props = self.propertiesView else { return }
+            if let annot = annotation {
+                // Update Properties View with selected annotation properties
+                props.selectedColor = annot.color
+                props.selectedWidth = annot.lineWidth
+                if let textAnnot = annot as? TextAnnotation {
+                    props.isBold = textAnnot.isBold
+                }
+                
+                // Configure View for Type
+                props.configure(for: annot.type)
+                
+                props.isHidden = false
+                
+                // Update Layout
+                self.updatePropertiesLayout()
+            } else {
+                // Keep showing props if a drawing tool is selected?
+                // For now, if nothing selected, we still might want to show props for the "Next" drawing.
+                // So we don't hide it here.
+            }
+        }
+        
+        annotationOverlay?.onToolChange = { [weak self] tool in
+            guard let self = self, let toolbar = self.toolbarView else { return }
+            toolbar.selectTool(tool)
+            self.didSelectTool(tool)
+        }
     }
     
     // MARK: - Logic Helpers
@@ -504,8 +540,6 @@ class SelectionView: NSView {
     
     private func resizeSelection(handle: Handle, deltaX: CGFloat, deltaY: CGFloat) {
         var r = selectionRect
-        
-        // Minimum size to prevent flipping for MVP
         let minSize: CGFloat = 10.0
         
         switch handle {
@@ -589,6 +623,16 @@ class SelectionView: NSView {
             return
         }
         
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "z" {
+            annotationOverlay?.undo()
+            return
+        }
+        
+        if (event.keyCode == 51 || event.keyCode == 117) { // Delete or Backspace
+            annotationOverlay?.deleteSelected()
+            return
+        }
+        
         // Handle arrow keys if we have a selection
         if !selectionRect.isEmpty {
             let shift = event.modifierFlags.contains(.shift)
@@ -635,6 +679,9 @@ class SelectionView: NSView {
                 }
                 
                 needsDisplay = true
+                if let overlay = annotationOverlay {
+                    overlay.frame = selectionRect
+                }
                 showToolbar() // Update toolbar position
                 return
             }
@@ -644,70 +691,176 @@ class SelectionView: NSView {
     }
     
     private func showToolbar() {
-        toolbarView?.removeFromSuperview()
+        hideToolbar() // Clear existing
         
-        let confirmBtn = NSButton(title: "Confirm", target: self, action: #selector(onConfirm))
-        confirmBtn.bezelStyle = .rounded
-        confirmBtn.controlSize = .regular
-        confirmBtn.setButtonType(.momentaryPushIn)
+        // 1. Create Main Toolbar
+        let toolbar = AnnotationToolbar(frame: .zero)
+        toolbar.delegate = self
+        self.addSubview(toolbar)
+        self.toolbarView = toolbar
         
-        let cancelBtn = NSButton(title: "Cancel", target: self, action: #selector(onCancelBtn))
-        cancelBtn.bezelStyle = .rounded
-        cancelBtn.controlSize = .regular
-        cancelBtn.setButtonType(.momentaryPushIn)
+        // 2. Create Properties View
+        let props = AnnotationPropertiesView(frame: .zero)
+        props.delegate = self
+        self.addSubview(props)
+        self.propertiesView = props
         
-        let stack = NSStackView(views: [cancelBtn, confirmBtn])
-        stack.orientation = .horizontal
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
-        
-        stack.wantsLayer = true
-        stack.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        stack.layer?.cornerRadius = 6
-        
-        self.addSubview(stack)
-        
-        let toolbarSize = stack.fittingSize
+        // Layout
+        let toolbarSize = toolbar.frame.size
+        let propsSize = props.frame.size
         let padding: CGFloat = 8
         
-        var x = selectionRect.maxX - toolbarSize.width
-        x = max(padding, x)
+        // Default Toolbar X: Bottom Right of selection, constrained
+        var toolbarX = selectionRect.maxX - toolbarSize.width
+        toolbarX = max(padding, toolbarX)
         
-        var y = selectionRect.minY - padding - toolbarSize.height
-        if y < padding {
-            y = selectionRect.maxY + padding
-        }
-        if y + toolbarSize.height > self.bounds.height {
-            y = min(y, self.bounds.height - toolbarSize.height - padding)
+        // Default Toolbar Y: Below selection
+        var toolbarY = selectionRect.minY - padding - toolbarSize.height
+        
+        // Check if enough space below
+        let spaceBelow = selectionRect.minY
+        let spaceAbove = self.bounds.height - selectionRect.maxY
+        
+        var isToolbarBelow = true
+        
+        if spaceBelow < (toolbarSize.height + padding + propsSize.height + padding) {
+            // Not enough space below for both? Try above
+            if spaceAbove > (toolbarSize.height + padding + propsSize.height + padding) {
+                // Put above
+                toolbarY = selectionRect.maxY + padding
+                isToolbarBelow = false
+            } else {
+                // Not enough space above either? Clamp to screen bottom
+                // If constrained to bottom, we might cover selection
+                if toolbarY < padding {
+                    toolbarY = padding
+                    isToolbarBelow = true // Technically at bottom
+                }
+            }
         }
         
-        stack.frame = NSRect(origin: NSPoint(x: x, y: y), size: toolbarSize)
-        self.toolbarView = stack
+        toolbar.frame.origin = NSPoint(x: toolbarX, y: toolbarY)
+        
+        // Properties View Layout
+        // If Toolbar is Below, Props is Below Toolbar
+        // If Toolbar is Above, Props is Above Toolbar
+        // Wait, usually Props is secondary, so maybe stack them nicely.
+        // Let's stack them vertically aligned left to the toolbar? Or same alignment?
+        
+        let propsX = toolbarX // Align lefts
+        var propsY: CGFloat = 0
+        
+        if isToolbarBelow {
+            propsY = toolbarY - padding - propsSize.height
+        } else {
+            propsY = toolbarY + toolbarSize.height + padding
+        }
+        
+        props.frame.origin = NSPoint(x: propsX, y: propsY)
+        
+        // Initial visibility
+        props.isHidden = false // Show by default or only when tool selected?
+        // User said: "Select each tool -> secondary toolbar appears".
+        // Let's show it by default for now, as "Color/Size" are relevant for drawing too.
     }
     
     private func hideToolbar() {
         toolbarView?.removeFromSuperview()
         toolbarView = nil
-    }
-    
-    @objc func onConfirm() {
-        print("Confirmed capture: \(selectionRect)")
-        NotificationCenter.default.post(name: .stopCapture, object: nil)
-    }
-    
-    @objc func onCancelBtn() {
-        print("Cancel button clicked - Exiting capture mode")
-        NotificationCenter.default.post(name: .stopCapture, object: nil)
+        propertiesView?.removeFromSuperview()
+        propertiesView = nil
     }
     
     private func handleCancel() {
+        if let overlay = annotationOverlay, !overlay.isHidden {
+            // Check if we have annotations to clear?
+            // Or just cancel the whole selection?
+            // User pressed Esc.
+            // If drawing, maybe cancel drawing?
+            // For now, cancel selection.
+        }
+        
         if !selectionRect.isEmpty {
             selectionRect = .zero
             state = .idle
             hideToolbar()
+            annotationOverlay?.isHidden = true
+            annotationOverlay?.clear()
             needsDisplay = true
         } else {
             NotificationCenter.default.post(name: .stopCapture, object: nil)
         }
+    }
+    
+    // MARK: - AnnotationToolbarDelegate
+    
+    func didSelectTool(_ tool: AnnotationType) {
+        annotationOverlay?.currentTool = tool
+        
+        // Configure properties view based on selected tool
+        propertiesView?.configure(for: tool)
+        
+        // Ensure properties view is visible
+        propertiesView?.isHidden = false
+        
+        // Update Layout if size changed
+        updatePropertiesLayout()
+    }
+    
+    func didSelectAction(_ action: ToolbarAction) {
+        switch action {
+        case .undo:
+            annotationOverlay?.undo()
+        case .close:
+            handleCancel()
+        case .save:
+            // Placeholder
+            print("Save requested")
+            // TODO: Implement save
+        case .copy:
+            // Placeholder
+            print("Copy requested")
+            // TODO: Implement copy
+            NotificationCenter.default.post(name: .stopCapture, object: nil)
+        }
+    }
+    
+    // MARK: - AnnotationPropertiesDelegate
+    
+    func didChangeColor(_ color: NSColor) {
+        annotationOverlay?.currentColor = color
+    }
+    
+    func didChangeLineWidth(_ width: CGFloat) {
+        annotationOverlay?.currentLineWidth = width
+    }
+    
+    func didChangeIsBold(_ isBold: Bool) {
+        annotationOverlay?.currentIsBold = isBold
+    }
+    
+    // Helper to update layout
+    private func updatePropertiesLayout() {
+        guard let toolbar = toolbarView, let props = propertiesView else { return }
+        
+        let propsSize = props.frame.size
+        let padding: CGFloat = 8
+        
+        // Re-evaluate propsY
+        let toolbarY = toolbar.frame.minY
+        
+        // If toolbar is near bottom (toolbarY is small), props should be above
+        // We previously calculated this in showToolbar.
+        // Let's just re-use the relative positioning logic.
+        
+        // Simple heuristic: if toolbarY < propsSize.height + padding, place above toolbar
+        var propsY: CGFloat
+        if toolbarY < (propsSize.height + padding) {
+             propsY = toolbar.frame.maxY + padding
+        } else {
+             propsY = toolbarY - padding - propsSize.height
+        }
+        
+        props.frame.origin = NSPoint(x: toolbar.frame.minX, y: propsY)
     }
 }
