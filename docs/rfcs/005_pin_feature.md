@@ -1,4 +1,4 @@
-# RFC 002: Pin 图 (贴图) 功能
+# RFC 005: Pin 图 (贴图) 功能
 
 ## 1. 需求描述 (Requirements)
 

@@ -33,6 +33,16 @@
     *   核心视图，处理所有鼠标交互（点击、拖拽、悬停）。
     *   维护交互状态机 (`InteractionState`: idle, creating, selected, moving, resizing)。
     *   负责绘制选区、手柄、十字光标和高亮框。
+    *   **Toolbar Integration**: 协调主工具栏 (`AnnotationToolbar`) 和属性面板 (`AnnotationPropertiesView`) 的显示与布局。
+*   **Annotation Layer (`AnnotationOverlayView`)**:
+    *   **职责**: 专门负责标注内容的绘制与交互，作为 `SelectionView` 的子视图（覆盖在选区之上）。
+    *   **Data Models**: 
+        *   `AnnotationModels.swift`: 定义 `Annotation` 协议及具体形状 (`Rectangle`, `Ellipse`, `Arrow`, `Line`, `Pen`, `Text`)。
+        *   **Hit Testing**: 每个图形实现 `contains(point)` 用于点击检测。
+    *   **Interaction**: 
+        *   独立处理标注的绘制 (`creating`)、选择 (`moving`)、变形 (`resizing`)。
+        *   支持 `Shift` 键约束（正方形/圆/45度角）。
+    *   **Text Editing**: 管理 `NSTextView` 的动态创建与销毁，处理文本输入。
 *   **Data Provider (`WindowInfoProvider`)**:
     *   **职责**: 封装 `ScreenCaptureKit`，提供当前屏幕的窗口信息。
     *   **核心能力**: 
