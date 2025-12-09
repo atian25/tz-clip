@@ -49,17 +49,21 @@ Status: Implemented
     *   **左侧区 (Left Section) - 属性控制**:
         *   **行 1 (Size)**: [图标] + [滑块 (Slider)] + [数值显示 (Value)]。
             *   针对形状: 控制线宽 (1-20px)。
-            *   针对文字: 控制字号 (12-64pt)。
+            *   针对文字: 控制字号 (10-100pt)。
         *   **行 2 (Opacity)**: [图标] + [滑块 (Slider)] + [数值显示 (Value)]。
             *   控制不透明度 (0-100%)。
     *   **中间区 (Middle Section) - 颜色选择**:
         *   **3x2 矩阵排列**的圆形色块。
         *   提供 5 种常用颜色（红、品红、蓝、黄、绿） + **自定义颜色按钮**（调用系统色板）。
     *   **右侧区 (Right Section) - 样式/特殊**:
-        *   **复选框 (Checkboxes)** 布局：
+        *   **复选框/下拉框 (Controls)** 布局：
             *   **实心 (Fill)**: 使用当前颜色和透明度填充形状。
             *   **圆角 (Rounded)**: 矩形工具专属，切换圆角/直角。
-            *   **加粗 (Bold)**: 文字工具专属。
+            *   **文字增强 (Text Enhancements)**:
+                *   **加粗 (Bold)**: 文字加粗。
+                *   **描边 (Outline)**: 无/细/粗 (None/Thin/Thick)。
+                *   **描边颜色 (Outline Color)**: 选择描边颜色。
+                *   **字体 (Font)**: 选择系统字体 (默认/Helvetica/Menlo/Arial等)。
 
 #### 2.2.1 详细属性定义
 *   **粗细/字号 (Size)**:
@@ -76,8 +80,17 @@ Status: Implemented
 *   **绘制 (Creating)**:
     *   按下鼠标 -> 拖动 -> 释放。
     *   `Shift` 键约束：正方形、正圆、水平/垂直/45度直线。
+    *   **文字工具**:
+        *   **点击**: 在点击处创建文本框，立即开始输入。
+        *   **输入**: 支持实时预览（所见即所得），自动横向扩展宽度。
+        *   **结束**: 点击画布空白处或按下 `Cmd+Enter` 完成输入。
+        *   **独立性**: 连续输入多段文字时，每段文字属性独立，互不干扰。
 *   **选择与编辑 (Selecting & Editing)**:
     *   点击已有图形自动进入选择模式。
+    *   **文字编辑**:
+        *   **双击**: 进入文字编辑模式。
+        *   **状态隔离**: 编辑时创建独立的状态快照，确保全局工具配置不影响当前正在编辑的文字。
+        *   **所见即所得**: 编辑框样式（字体、大小、颜色、描边）与原文字完全一致。
     *   **移动**: 拖动图形主体。
     *   **缩放**: 拖动图形周围的 8 个控制点 (Handles)。`Shift` 键保持比例。
     *   **删除**: 选中后按 `Delete` / `Backspace`。
@@ -104,9 +117,11 @@ SelectionView (NSView)
     *   `currentTool: AnnotationType`
     *   `selectedAnnotationID: UUID?`
     *   `dragAction: DragAction` (creating, moving, resizing)
+    *   `currentEditingState`: 用于保存文字编辑时的临时状态快照。
 *   **方法**:
     *   `draw(_:)`: 遍历 `annotations` 调用其 `draw(in:)` 方法。
     *   `mouseDown/dragged/Up`: 处理绘制和编辑手势。
+    *   `startTextEditing`/`endTextEditing`: 管理 NSTextView 的生命周期。
 
 #### `Annotation` (Protocol)
 *   **属性**: `id`, `type`, `color`, `lineWidth`, `opacity`, `bounds`。
@@ -114,7 +129,7 @@ SelectionView (NSView)
     *   `draw(in context: CGContext)`
     *   `contains(point: CGPoint) -> Bool`
     *   `move(by translation: CGPoint) -> Annotation`
-*   **实现**: `RectangleAnnotation`, `EllipseAnnotation`, `LineAnnotation`, `TextAnnotation`, `CounterAnnotation` 等。
+*   **实现**: `RectangleAnnotation`, `EllipseAnnotation`, `LineAnnotation`, `TextAnnotation` (增强: `outlineStyle`, `outlineColor`, `fontName`), `CounterAnnotation` 等。
 
 #### `AnnotationToolbar` & `PropertiesView`
 *   纯 UI 组件，通过 `Delegate` 或 `Closure` 与 `SelectionView` 通信。
@@ -143,11 +158,13 @@ SelectionView (NSView)
 - [ ] **Step 6: 高级标注工具 (Phase 2)**
     - [ ] 实现**序号 (Counter)** 工具。
     - [ ] 实现**马赛克 (Mosaic)** 工具。
-- [x] **Step 7: 文字工具完善**
+- [x] **Step 7: 文字工具完善 (Enhanced)**
     - [x] 集成 `NSTextView` 进行文本输入。
     - [x] 渲染文本标注。
+    - [x] **高级文本属性**: 描边、字体选择。
+    - [x] **交互优化**: 自动扩容、双击编辑、属性隔离。
 - [x] **Step 8: 操作落地**
     - [x] 实现复制 (Copy) 和保存 (Save) 功能。
-    - 实现贴图 (Pin) 功能 (Phase 2)。
-    - 实现 OCR (Phase 3)。
-    - 实现长截图 (Phase 3)。
+    - [ ] 实现贴图 (Pin) 功能 (Phase 2)。
+    - [ ] 实现 OCR (Phase 3)。
+    - [ ] 实现长截图 (Phase 3)。

@@ -7,6 +7,9 @@ import Cocoa
         func didChangeIsBold(_ isBold: Bool)
         func didChangeIsFilled(_ isFilled: Bool)
         func didChangeIsRounded(_ isRounded: Bool)
+        func didChangeOutlineStyle(_ style: Int)
+        func didChangeOutlineColor(_ color: NSColor)
+        func didChangeFontName(_ name: String)
     }
 
 class ColorButton: NSButton {
@@ -62,6 +65,11 @@ class AnnotationPropertiesView: NSView {
     private var fillCheckbox: NSButton?
     private var roundedCheckbox: NSButton?
     
+    // Text specific controls
+    private var outlineStylePopup: NSPopUpButton?
+    private var outlineColorWell: NSColorWell?
+    private var fontPopup: NSPopUpButton?
+    
     // State
     private let colors: [NSColor] = [.red, .magenta, .blue, .yellow, .green] // 5 fixed colors + 1 custom
     private var currentType: AnnotationType = .rectangle
@@ -98,6 +106,28 @@ class AnnotationPropertiesView: NSView {
     var isRounded: Bool = false {
         didSet {
             roundedCheckbox?.state = isRounded ? .on : .off
+        }
+    }
+    
+    var outlineStyle: Int = 0 {
+        didSet {
+            outlineStylePopup?.selectItem(at: outlineStyle)
+        }
+    }
+    
+    var outlineColor: NSColor = .black {
+        didSet {
+            outlineColorWell?.color = outlineColor
+        }
+    }
+    
+    var fontName: String = "System Default" {
+        didSet {
+            if let item = fontPopup?.item(withTitle: fontName) {
+                fontPopup?.select(item)
+            } else {
+                fontPopup?.selectItem(at: 0) // Default
+            }
         }
     }
     
@@ -277,6 +307,48 @@ class AnnotationPropertiesView: NSView {
         addSubview(boldBtn)
         self.boldButton = boldBtn
         
+        // --- Text Specific Controls (Right Section Overlay) ---
+        // Reuse same area as Checkboxes
+        
+        // Outline Style Popup (Top Row)
+        let outlinePopup = NSPopUpButton(frame: CGRect(x: checkStartX, y: row1Y, width: 60, height: 16), pullsDown: false)
+        outlinePopup.addItems(withTitles: ["无", "细", "粗"]) // None, Thin, Thick
+        outlinePopup.controlSize = .small
+        outlinePopup.font = labelFont
+        outlinePopup.target = self
+        outlinePopup.action = #selector(outlineStyleChanged(_:))
+        outlinePopup.isHidden = true
+        addSubview(outlinePopup)
+        self.outlineStylePopup = outlinePopup
+        
+        // Outline Color Well (Next to Outline Popup)
+        // Adjust width of popup to fit color well?
+        // Let's make popup smaller: 40 width, ColorWell 16 width
+        outlinePopup.frame.size.width = 44
+        
+        let outlineColor = NSColorWell(frame: CGRect(x: checkStartX + 48, y: row1Y, width: 16, height: 16))
+        outlineColor.color = .black
+        outlineColor.controlSize = .mini // Does ColorWell have controlSize? No, just frame.
+        outlineColor.target = self
+        outlineColor.action = #selector(outlineColorChanged(_:))
+        outlineColor.isHidden = true
+        addSubview(outlineColor)
+        self.outlineColorWell = outlineColor
+        
+        // Font Popup (Bottom Row)
+        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX, y: row2Y, width: 64, height: 16), pullsDown: false)
+        fontPop.addItem(withTitle: "系统默认")
+        // Add some common fonts
+        let commonFonts = ["Helvetica", "Arial", "Times New Roman", "Courier New", "Verdana"]
+        fontPop.addItems(withTitles: commonFonts)
+        fontPop.controlSize = .small
+        fontPop.font = labelFont
+        fontPop.target = self
+        fontPop.action = #selector(fontChanged(_:))
+        fontPop.isHidden = true
+        addSubview(fontPop)
+        self.fontPopup = fontPop
+        
         // Initial State
         updateUIFromSelection()
     }
@@ -286,10 +358,20 @@ class AnnotationPropertiesView: NSView {
     func configure(for type: AnnotationType) {
         self.currentType = type
         
+        // Recalculate layout constants needed for dynamic adjustments
+        let height: CGFloat = 64
+        let padding: CGFloat = 8
+        let rowHeight: CGFloat = 20
+        let rowSpacing: CGFloat = 8
+        let row1Y = height - padding - rowHeight
+        let row2Y = row1Y - rowHeight - rowSpacing
+        // checkStartX matches the X of fillCheckbox
+        let checkStartX = fillCheckbox?.frame.minX ?? 238
+        
         // Update Size Slider Range
         if type == .text {
-            sizeSlider?.minValue = 12.0
-            sizeSlider?.maxValue = 64.0
+            sizeSlider?.minValue = 10.0
+            sizeSlider?.maxValue = 100.0
             sizeValueLabel?.stringValue = "\(Int(selectedWidth))pt"
         } else {
             sizeSlider?.minValue = 1.0
@@ -307,7 +389,53 @@ class AnnotationPropertiesView: NSView {
         // Rounded only for Rectangle
         roundedCheckbox?.isHidden = (type != .rectangle)
         
-        // Ensure slider matches current selectedWidth (which might be in different scale)
+        // Text Specific Controls
+        let isText = (type == .text)
+        outlineStylePopup?.isHidden = !isText
+        outlineColorWell?.isHidden = !isText
+        fontPopup?.isHidden = !isText
+        
+        // If Text, Bold button is visible. But we might want to move it or keep it?
+        // In my new layout, Outline/Font occupy the checkbox area.
+        // Bold button was at (checkStartX, row1Y).
+        // OutlinePopup is also at (checkStartX, row1Y).
+        // We need to shift Bold Button if Text.
+        if isText {
+            // Re-layout for Text Mode
+            // Top Row: Outline Popup (44) + Outline Color (16) + Spacing (4) = 64
+            // Bold Button was at checkStartX.
+            // Let's place Bold Button to the RIGHT of Outline Color? Or maybe before?
+            // User screenshot:
+            // Top: "无" (Popup) | [Color]
+            // Bottom: "系统默认" (Popup)
+            // Where is Bold? Maybe user didn't show it or it's toggleable elsewhere?
+            // But we have a Bold button. Let's put it next to Font Popup?
+            
+            // Adjust Outline Popup width
+            outlineStylePopup?.frame.size.width = 44
+            outlineStylePopup?.frame.origin = CGPoint(x: checkStartX, y: row1Y)
+            
+            // Outline Color
+            outlineColorWell?.frame.origin = CGPoint(x: checkStartX + 48, y: row1Y)
+            
+            // Font Popup (Bottom Row)
+            // Make it slightly narrower to fit Bold button if needed
+            fontPopup?.frame.size.width = 64 // Full width
+            fontPopup?.frame.origin = CGPoint(x: checkStartX, y: row2Y)
+            
+            // Bold Button
+            // If we put it next to Font Popup, we need more width.
+            // Current Right Section Width is 60. 64 is already tight.
+            // Let's increase view width dynamically? Or just squeeze.
+            // Let's place Bold button as an overlay or to the left of Right Section (in the padding area)?
+            // The padding between Middle and Right is 10px.
+            // We can put Bold button at `checkStartX - 24`.
+            
+            boldButton?.frame.origin = CGPoint(x: checkStartX - 24, y: row2Y)
+            boldButton?.isHidden = false
+        } else {
+            // Reset logic for other tools? Bold is hidden anyway.
+        }
         sizeSlider?.doubleValue = selectedWidth
     }
     
@@ -358,6 +486,13 @@ class AnnotationPropertiesView: NSView {
             roundedCheckbox?.state = .on
         } else {
             roundedCheckbox?.state = .off
+        }
+        
+        // Update Text Controls
+        outlineStylePopup?.selectItem(at: outlineStyle)
+        outlineColorWell?.color = outlineColor
+        if let item = fontPopup?.item(withTitle: fontName) {
+            fontPopup?.select(item)
         }
     }
     
@@ -434,5 +569,20 @@ class AnnotationPropertiesView: NSView {
         baseColor = sender.color
         selectedColor = baseColor.withAlphaComponent(currentOpacity)
         delegate?.didChangeColor(selectedColor)
+    }
+    
+    @objc private func outlineStyleChanged(_ sender: NSPopUpButton) {
+        outlineStyle = sender.indexOfSelectedItem
+        delegate?.didChangeOutlineStyle(outlineStyle)
+    }
+    
+    @objc private func outlineColorChanged(_ sender: NSColorWell) {
+        outlineColor = sender.color
+        delegate?.didChangeOutlineColor(outlineColor)
+    }
+    
+    @objc private func fontChanged(_ sender: NSPopUpButton) {
+        fontName = sender.titleOfSelectedItem ?? "System Default"
+        delegate?.didChangeFontName(fontName)
     }
 }

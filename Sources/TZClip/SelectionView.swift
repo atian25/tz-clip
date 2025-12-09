@@ -480,9 +480,12 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 props.selectedColor = annot.color
                 props.selectedWidth = annot.lineWidth
                 if let textAnnot = annot as? TextAnnotation {
-                    props.isBold = textAnnot.isBold
-                }
-                if let rectAnnot = annot as? RectangleAnnotation {
+                props.isBold = textAnnot.isBold
+                props.outlineStyle = textAnnot.outlineStyle
+                props.outlineColor = textAnnot.outlineColor
+                props.fontName = textAnnot.fontName
+            }
+            if let rectAnnot = annot as? RectangleAnnotation {
                     props.isFilled = rectAnnot.isFilled
                     props.isRounded = rectAnnot.isRounded
                 }
@@ -811,9 +814,12 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
             propertiesView?.selectedColor = overlay.currentColor
             propertiesView?.selectedWidth = overlay.currentLineWidth
             if tool == .text {
-                propertiesView?.isBold = overlay.currentIsBold
-            }
-            if tool == .rectangle {
+            propertiesView?.isBold = overlay.currentIsBold
+            propertiesView?.outlineStyle = overlay.currentOutlineStyle
+            propertiesView?.outlineColor = overlay.currentOutlineColor
+            propertiesView?.fontName = overlay.currentFontName
+        }
+        if tool == .rectangle {
                 propertiesView?.isRounded = overlay.currentIsRounded
             }
             propertiesView?.isFilled = overlay.currentIsFilled
@@ -970,6 +976,18 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
     
     func didChangeIsRounded(_ isRounded: Bool) {
         annotationOverlay?.currentIsRounded = isRounded
+    }
+    
+    func didChangeOutlineStyle(_ style: Int) {
+        annotationOverlay?.currentOutlineStyle = style
+    }
+    
+    func didChangeOutlineColor(_ color: NSColor) {
+        annotationOverlay?.currentOutlineColor = color
+    }
+    
+    func didChangeFontName(_ name: String) {
+        annotationOverlay?.currentFontName = name
     }
     
     // Helper to update layout

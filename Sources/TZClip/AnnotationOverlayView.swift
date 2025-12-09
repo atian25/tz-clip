@@ -28,6 +28,9 @@ class AnnotationOverlayView: NSView {
         var isBold: Bool = false
         var isFilled: Bool = false
         var isRounded: Bool = false
+        var outlineStyle: Int = 0
+        var outlineColor: NSColor = .black
+        var fontName: String = "System Default"
     }
     
     private var toolConfigs: [AnnotationType: ToolConfig] = [:]
@@ -36,7 +39,15 @@ class AnnotationOverlayView: NSView {
     private var currentConfig: ToolConfig {
         get {
             guard let tool = currentTool else { return ToolConfig() }
-            return toolConfigs[tool] ?? ToolConfig()
+            if let config = toolConfigs[tool] {
+                return config
+            }
+            // Default logic
+            var config = ToolConfig()
+            if tool == .text {
+                config.lineWidth = 18.0 // Default font size
+            }
+            return config
         }
         set {
             guard let tool = currentTool else { return }
@@ -45,32 +56,19 @@ class AnnotationOverlayView: NSView {
     }
     
     var currentTool: AnnotationType? {
+        willSet {
+             // If we are switching tools (or cancelling), we must end any active text editing session.
+             // We do this in willSet so that `endTextEditing` runs with the OLD config (e.g. text tool config)
+             // before the new config (e.g. line tool config) is loaded.
+             if let _ = activeTextView {
+                 endTextEditing()
+             }
+        }
         didSet {
             window?.invalidateCursorRects(for: self)
             
-            // If we switch tools (or cancel), we must end any active text editing session.
-            if let _ = activeTextView {
-                endTextEditing()
-            }
-            
             if currentTool != .select {
                 selectedAnnotationID = nil
-                // Notify tool change to update properties view with new tool's config
-                // Wait, onToolChange usually comes FROM toolbar.
-                // If we set tool here, we should notify properties view.
-                // The delegate flow is: Toolbar -> SelectionView -> Overlay -> SelectionView -> PropertiesView
-                // But we need to sync the Overlay's stored config to the Properties View.
-                
-                // Let's rely on SelectionView asking us or we notify SelectionView via a new callback?
-                // Or easier: SelectionView calls `annotationOverlay.currentConfig`?
-                
-                // Better: When tool changes, we fire a callback that includes the config?
-                // `onToolChange` is used to tell Toolbar to highlight button.
-                // We might need `onConfigChange`?
-                
-                // Actually, SelectionView.didSelectTool sets overlay.currentTool
-                // Then it calls propertiesView.configure(for: tool).
-                // It SHOULD also set propertiesView values from overlay.
             }
         }
     }
@@ -78,36 +76,32 @@ class AnnotationOverlayView: NSView {
     var currentColor: NSColor {
         get { currentConfig.color }
         set {
-            if currentTool != .select {
-                currentConfig.color = newValue
-            }
+            currentConfig.color = newValue
             // Also update selected annotation if any
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
                 annotations[index].color = newValue
                 needsDisplay = true
             }
+            updateActiveTextView()
         }
     }
     
     var currentLineWidth: CGFloat {
         get { currentConfig.lineWidth }
         set {
-            if currentTool != .select {
-                currentConfig.lineWidth = newValue
-            }
+            currentConfig.lineWidth = newValue
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
                 annotations[index].lineWidth = newValue
                 needsDisplay = true
             }
+            updateActiveTextView()
         }
     }
     
     var currentIsBold: Bool {
         get { currentConfig.isBold }
         set {
-            if currentTool != .select {
-                currentConfig.isBold = newValue
-            }
+            currentConfig.isBold = newValue
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
                 if var textAnnot = annotations[index] as? TextAnnotation {
                     textAnnot.isBold = newValue
@@ -115,15 +109,14 @@ class AnnotationOverlayView: NSView {
                     needsDisplay = true
                 }
             }
+            updateActiveTextView()
         }
     }
     
     var currentIsFilled: Bool {
         get { currentConfig.isFilled }
         set {
-            if currentTool != .select {
-                currentConfig.isFilled = newValue
-            }
+            currentConfig.isFilled = newValue
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
                 if var rectAnnot = annotations[index] as? RectangleAnnotation {
                     rectAnnot.isFilled = newValue
@@ -141,9 +134,7 @@ class AnnotationOverlayView: NSView {
     var currentIsRounded: Bool {
         get { currentConfig.isRounded }
         set {
-            if currentTool != .select {
-                currentConfig.isRounded = newValue
-            }
+            currentConfig.isRounded = newValue
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
                 if var rectAnnot = annotations[index] as? RectangleAnnotation {
                     rectAnnot.isRounded = newValue
@@ -151,6 +142,49 @@ class AnnotationOverlayView: NSView {
                     needsDisplay = true
                 }
             }
+        }
+    }
+    
+    var currentOutlineStyle: Int {
+        get { currentConfig.outlineStyle }
+        set {
+            currentConfig.outlineStyle = newValue
+            if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
+                if var textAnnot = annotations[index] as? TextAnnotation {
+                    textAnnot.outlineStyle = newValue
+                    annotations[index] = textAnnot
+                    needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    var currentOutlineColor: NSColor {
+        get { currentConfig.outlineColor }
+        set {
+            currentConfig.outlineColor = newValue
+            if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
+                if var textAnnot = annotations[index] as? TextAnnotation {
+                    textAnnot.outlineColor = newValue
+                    annotations[index] = textAnnot
+                    needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    var currentFontName: String {
+        get { currentConfig.fontName }
+        set {
+            currentConfig.fontName = newValue
+            if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
+                if var textAnnot = annotations[index] as? TextAnnotation {
+                    textAnnot.fontName = newValue
+                    annotations[index] = textAnnot
+                    needsDisplay = true
+                }
+            }
+            updateActiveTextView()
         }
     }
     
@@ -178,6 +212,54 @@ class AnnotationOverlayView: NSView {
     
     // Text Editing
     private var activeTextView: NSTextView?
+    
+    // Text Editing State Snapshot
+    private struct TextEditingState {
+        var isBold: Bool
+        var outlineStyle: Int
+        var outlineColor: NSColor
+        var fontName: String
+    }
+    private var currentEditingState: TextEditingState?
+
+    // MARK: - Text Editing Helper
+    
+    private func updateActiveTextView() {
+        guard let textView = activeTextView else { return }
+        
+        // If we are editing, we should respect the current tool's config OR the selected annotation's config.
+        // But if currentTool switched to something else (e.g. Line), we should NOT update activeTextView.
+        // This is a safety check.
+        if currentTool != .text && currentTool != .select {
+            return
+        }
+        
+        let size = max(10.0, min(100.0, currentLineWidth))
+        
+        var font: NSFont
+        if currentFontName == "System Default" {
+            font = NSFont.systemFont(ofSize: size)
+        } else {
+            font = NSFont(name: currentFontName, size: size) ?? NSFont.systemFont(ofSize: size)
+        }
+        
+        if currentIsBold {
+            font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+        } else {
+            font = NSFontManager.shared.convert(font, toNotHaveTrait: .boldFontMask)
+        }
+        
+        textView.font = font
+        textView.textColor = currentColor
+        
+        // Update Snapshot
+        currentEditingState = TextEditingState(
+            isBold: currentIsBold,
+            outlineStyle: currentOutlineStyle,
+            outlineColor: currentOutlineColor,
+            fontName: currentFontName
+        )
+    }
     
     // MARK: - Init
     
@@ -331,16 +413,42 @@ class AnnotationOverlayView: NSView {
     // MARK: - Mouse Events
     
     override func mouseDown(with event: NSEvent) {
+        // 0. Check if we are currently editing text.
+        // If so, any click outside the text view (which ends up here) should commit the edit.
+        // We swallow the event to prevent accidental creation/selection of others immediately.
+        if activeTextView != nil {
+            endTextEditing()
+            return
+        }
+
         let p = convert(event.locationInWindow, from: nil)
         dragStartPoint = p
         
-        // Handle Text Creation
-        if currentTool == .text {
-            startTextEditing(at: p)
-            return
+        // Priority 0: Handle Double Click for Editing
+        if event.clickCount == 2 {
+             if let index = annotations.lastIndex(where: { $0.contains(point: p) }) {
+                 let annot = annotations[index]
+                 if let textAnnot = annot as? TextAnnotation {
+                     // Deselect current annotation to prevent property setters from modifying it
+                     // (e.g. if A was selected, updating lineWidth for B should not resize A)
+                     selectedAnnotationID = nil
+                     
+                     // Sync properties to global state so editor uses correct style
+                     self.currentColor = textAnnot.color
+                     self.currentLineWidth = textAnnot.lineWidth
+                     self.currentIsBold = textAnnot.isBold
+                     self.currentFontName = textAnnot.fontName
+                     self.currentOutlineStyle = textAnnot.outlineStyle
+                     self.currentOutlineColor = textAnnot.outlineColor
+                     
+                     // Start Editing existing text
+                     startTextEditing(at: textAnnot.origin, existingText: textAnnot.text, existingAnnotID: textAnnot.id)
+                     return
+                 }
+             }
         }
         
-        // 1. Check Handles of selected annotation (Priority 1)
+        // Priority 1: Check Handles of selected annotation
         if let id = selectedAnnotationID, let annotation = annotations.first(where: { $0.id == id }) {
             let handles = getHandleRects(for: annotation)
             for (handle, rect) in handles {
@@ -350,15 +458,16 @@ class AnnotationOverlayView: NSView {
                 }
             }
             
-            // 2. Check Body of selected annotation (Priority 2) - Allow moving current selection
+            // Priority 2: Check Body of selected annotation (Moving)
             if annotation.contains(point: p) {
                 dragAction = .moving
                 return
             }
         }
         
-        // 3. Check Body of ANY annotation (Priority 3) - Select on click
-        // Even if creating, if we click exactly on an existing annotation, we select it.
+        // Priority 3: Check Body of ANY annotation (Selection)
+        // Even if we are in Creation Mode (e.g. Text), if we click ON an existing annotation,
+        // we should select it (and switch to Select tool) instead of creating new on top.
         if let index = annotations.lastIndex(where: { $0.contains(point: p) }) {
             let annot = annotations[index]
             selectedAnnotationID = annot.id
@@ -375,13 +484,22 @@ class AnnotationOverlayView: NSView {
             self.currentLineWidth = annot.lineWidth
             if let textAnnot = annot as? TextAnnotation {
                 self.currentIsBold = textAnnot.isBold
+                self.currentFontName = textAnnot.fontName
+                self.currentOutlineStyle = textAnnot.outlineStyle
+                self.currentOutlineColor = textAnnot.outlineColor
             }
             
             needsDisplay = true
             return
         }
         
-        // 4. Creation Mode (Priority 4)
+        // Handle Text Creation (Only if NOT clicking on existing annotation)
+        if currentTool == .text {
+            startTextEditing(at: p)
+            return
+        }
+        
+        // Priority 4: Creation Mode (Shapes/Lines)
         if currentTool != .select && currentTool != nil {
              // Deselect current if starting new creation
              selectedAnnotationID = nil
@@ -625,38 +743,134 @@ class AnnotationOverlayView: NSView {
     
     // MARK: - Text Editing
     
-    private func startTextEditing(at point: CGPoint) {
-        let textView = NSTextView(frame: CGRect(origin: point, size: CGSize(width: 100, height: 24)))
-        textView.font = NSFont.systemFont(ofSize: 14) // Should use size property
+    private func startTextEditing(at point: CGPoint, existingText: String? = nil, existingAnnotID: UUID? = nil) {
+        // ... (existing configuration code) ...
+        
+        let initialWidth: CGFloat = existingText == nil ? 50 : 200 // Will resize anyway
+        
+        // Ensure the text view frame doesn't exceed the overlay bounds initially
+        // But since we want auto-resize, we should start small and let it grow.
+        // The issue is likely `containerSize` being too large or clipview not set up.
+        // NSTextView is complex.
+        
+        let textView = NSTextView(frame: CGRect(origin: point, size: CGSize(width: initialWidth, height: 24)))
+        
+        // ... Font configuration ...
+        // Ensure we use the correct size if we are editing existing text
+        // If editing, currentLineWidth should have been updated by mouseDown logic already.
+        // But let's double check logic.
+        let size = max(10.0, min(100.0, currentLineWidth)) // Enforce 10-100 range
+        var font: NSFont
+        if currentFontName == "System Default" {
+            font = NSFont.systemFont(ofSize: size)
+        } else {
+            font = NSFont(name: currentFontName, size: size) ?? NSFont.systemFont(ofSize: size)
+        }
+        
+        if currentIsBold {
+            font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+        } else {
+            font = NSFontManager.shared.convert(font, toNotHaveTrait: .boldFontMask)
+        }
+        
+        textView.font = font
         textView.textColor = currentColor
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.isRichText = false
         textView.delegate = self
+        
+        // Auto-resizing configuration
+        textView.isHorizontallyResizable = true
+        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = false // Allow growing horizontally
+        textView.textContainer?.containerSize = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        
+        if let text = existingText {
+            textView.string = text
+            if let id = existingAnnotID {
+                annotations.removeAll(where: { $0.id == id })
+                needsDisplay = true
+            }
+            // Explicitly resize for existing text
+            // Important: We must ensure layoutManager has done its job
+            if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+                layoutManager.ensureLayout(for: textContainer)
+                let usedRect = layoutManager.usedRect(for: textContainer)
+                textView.frame.size = CGSize(width: max(50, usedRect.width + 10), height: max(size + 4, usedRect.height))
+            } else {
+                textView.sizeToFit()
+            }
+        }
+        
         self.addSubview(textView)
         self.window?.makeFirstResponder(textView)
         activeTextView = textView
+        
+        // Initial resize to fit content or minimum
+        if existingText == nil {
+             // For new text, start with a reasonable minimum width but ensure height matches font
+             if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+                 layoutManager.ensureLayout(for: textContainer)
+                 let height = layoutManager.usedRect(for: textContainer).height
+                 textView.frame.size.height = max(height, size + 4) // Ensure enough height
+             }
+             textView.frame.size.width = 50
+        }
+        
+        // Initialize Snapshot
+        currentEditingState = TextEditingState(
+            isBold: currentIsBold,
+            outlineStyle: currentOutlineStyle,
+            outlineColor: currentOutlineColor,
+            fontName: currentFontName
+        )
     }
     
     private func endTextEditing() {
         guard let textView = activeTextView else { return }
         
         if !textView.string.isEmpty {
+            // Calculate font size from actual view font
+            let fontSize = textView.font?.pointSize ?? 14.0
+            
+            // Use snapshot state if available, otherwise fallback to current config (risky but fallback)
+            let isBold = currentEditingState?.isBold ?? currentIsBold
+            let outlineStyle = currentEditingState?.outlineStyle ?? currentOutlineStyle
+            let outlineColor = currentEditingState?.outlineColor ?? currentOutlineColor
+            let fontName = currentEditingState?.fontName ?? currentFontName
+            
             let annot = TextAnnotation(
                 text: textView.string,
                 origin: textView.frame.origin,
-                color: currentColor,
-                lineWidth: 0,
+                color: textView.textColor ?? .black, // Use actual color
+                lineWidth: fontSize, // Use actual font size
                 font: textView.font ?? NSFont.systemFont(ofSize: 14),
-                isBold: currentIsBold
+                isBold: isBold,
+                outlineStyle: outlineStyle,
+                outlineColor: outlineColor,
+                fontName: fontName
             )
             annotations.append(annot)
-            selectedAnnotationID = annot.id
-            // Do not switch tool, keep text tool active
+            
+            // Only select the new annotation IF we are NOT in Text Tool mode (e.g. Double Click Edit).
+            // If we are in Text Tool mode, we generally want to be ready to create NEW text, not select the old one.
+            // BUT, if we select it, changing properties will change IT.
+            // Standard drawing app behavior for Text Tool:
+            // - Click to type.
+            // - Click elsewhere to finish and start NEW text.
+            // - The previous text is finalized and Deselected.
+            
+            if currentTool == .text {
+                selectedAnnotationID = nil
+            } else {
+                selectedAnnotationID = annot.id
+            }
         }
         
         textView.removeFromSuperview()
         activeTextView = nil
+        currentEditingState = nil
         needsDisplay = true
     }
 }
@@ -675,5 +889,18 @@ extension AnnotationOverlayView: NSTextViewDelegate {
             return true
         }
         return false
+    }
+
+    func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        return true
+    }
+    
+    func textDidChange(_ notification: Notification) {
+        guard let textView = notification.object as? NSTextView else { return }
+        textView.sizeToFit()
+        // Ensure minimum width
+        if textView.frame.width < 50 {
+            textView.frame.size.width = 50
+        }
     }
 }
