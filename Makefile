@@ -11,6 +11,7 @@ build:
 	swift build
 
 run: build sign
+	$(MAKE) stop
 	$(DEBUG_BIN)
 
 sign:
