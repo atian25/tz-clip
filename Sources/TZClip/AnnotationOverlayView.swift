@@ -21,6 +21,29 @@ class AnnotationOverlayView: NSView {
     
     // MARK: - Properties
     
+    // Independent Tool Configuration
+    private struct ToolConfig {
+        var color: NSColor = .red
+        var lineWidth: CGFloat = 4.0
+        var isBold: Bool = false
+        var isFilled: Bool = false
+        var isRounded: Bool = false
+    }
+    
+    private var toolConfigs: [AnnotationType: ToolConfig] = [:]
+    
+    // Helper to get/set config for current tool
+    private var currentConfig: ToolConfig {
+        get {
+            guard let tool = currentTool else { return ToolConfig() }
+            return toolConfigs[tool] ?? ToolConfig()
+        }
+        set {
+            guard let tool = currentTool else { return }
+            toolConfigs[tool] = newValue
+        }
+    }
+    
     var currentTool: AnnotationType? {
         didSet {
             window?.invalidateCursorRects(for: self)
@@ -32,24 +55,101 @@ class AnnotationOverlayView: NSView {
             
             if currentTool != .select {
                 selectedAnnotationID = nil
+                // Notify tool change to update properties view with new tool's config
+                // Wait, onToolChange usually comes FROM toolbar.
+                // If we set tool here, we should notify properties view.
+                // The delegate flow is: Toolbar -> SelectionView -> Overlay -> SelectionView -> PropertiesView
+                // But we need to sync the Overlay's stored config to the Properties View.
+                
+                // Let's rely on SelectionView asking us or we notify SelectionView via a new callback?
+                // Or easier: SelectionView calls `annotationOverlay.currentConfig`?
+                
+                // Better: When tool changes, we fire a callback that includes the config?
+                // `onToolChange` is used to tell Toolbar to highlight button.
+                // We might need `onConfigChange`?
+                
+                // Actually, SelectionView.didSelectTool sets overlay.currentTool
+                // Then it calls propertiesView.configure(for: tool).
+                // It SHOULD also set propertiesView values from overlay.
             }
         }
     }
     
-    var currentColor: NSColor = .red {
-        didSet {
+    var currentColor: NSColor {
+        get { currentConfig.color }
+        set {
+            if currentTool != .select {
+                currentConfig.color = newValue
+            }
+            // Also update selected annotation if any
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
-                annotations[index].color = currentColor
+                annotations[index].color = newValue
                 needsDisplay = true
             }
         }
     }
     
-    var currentLineWidth: CGFloat = 4.0 {
-        didSet {
+    var currentLineWidth: CGFloat {
+        get { currentConfig.lineWidth }
+        set {
+            if currentTool != .select {
+                currentConfig.lineWidth = newValue
+            }
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
-                annotations[index].lineWidth = currentLineWidth
+                annotations[index].lineWidth = newValue
                 needsDisplay = true
+            }
+        }
+    }
+    
+    var currentIsBold: Bool {
+        get { currentConfig.isBold }
+        set {
+            if currentTool != .select {
+                currentConfig.isBold = newValue
+            }
+            if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
+                if var textAnnot = annotations[index] as? TextAnnotation {
+                    textAnnot.isBold = newValue
+                    annotations[index] = textAnnot
+                    needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    var currentIsFilled: Bool {
+        get { currentConfig.isFilled }
+        set {
+            if currentTool != .select {
+                currentConfig.isFilled = newValue
+            }
+            if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
+                if var rectAnnot = annotations[index] as? RectangleAnnotation {
+                    rectAnnot.isFilled = newValue
+                    annotations[index] = rectAnnot
+                    needsDisplay = true
+                } else if var ellAnnot = annotations[index] as? EllipseAnnotation {
+                    ellAnnot.isFilled = newValue
+                    annotations[index] = ellAnnot
+                    needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    var currentIsRounded: Bool {
+        get { currentConfig.isRounded }
+        set {
+            if currentTool != .select {
+                currentConfig.isRounded = newValue
+            }
+            if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
+                if var rectAnnot = annotations[index] as? RectangleAnnotation {
+                    rectAnnot.isRounded = newValue
+                    annotations[index] = rectAnnot
+                    needsDisplay = true
+                }
             }
         }
     }
@@ -58,17 +158,7 @@ class AnnotationOverlayView: NSView {
     
     var onToolChange: ((AnnotationType) -> Void)?
     
-    var currentIsBold: Bool = false {
-        didSet {
-            if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
-                if var textAnnot = annotations[index] as? TextAnnotation {
-                    textAnnot.isBold = currentIsBold
-                    annotations[index] = textAnnot
-                    needsDisplay = true
-                }
-            }
-        }
-    }
+    var hasSelection: Bool { selectedAnnotationID != nil }
     
     private var annotations: [Annotation] = []
     private var currentAnnotation: Annotation?
@@ -299,9 +389,9 @@ class AnnotationOverlayView: NSView {
              
              switch currentTool {
              case .rectangle:
-                 currentAnnotation = RectangleAnnotation(rect: CGRect(origin: p, size: .zero), color: currentColor, lineWidth: currentLineWidth)
+                 currentAnnotation = RectangleAnnotation(rect: CGRect(origin: p, size: .zero), color: currentColor, lineWidth: currentLineWidth, isFilled: currentIsFilled, isRounded: currentIsRounded)
              case .ellipse:
-                 currentAnnotation = EllipseAnnotation(rect: CGRect(origin: p, size: .zero), color: currentColor, lineWidth: currentLineWidth)
+                 currentAnnotation = EllipseAnnotation(rect: CGRect(origin: p, size: .zero), color: currentColor, lineWidth: currentLineWidth, isFilled: currentIsFilled)
              case .arrow:
                   currentAnnotation = ArrowAnnotation(startPoint: p, endPoint: p, color: currentColor, lineWidth: currentLineWidth)
              case .line:

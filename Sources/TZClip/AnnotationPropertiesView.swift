@@ -1,11 +1,13 @@
 import Cocoa
 
 @MainActor
-protocol AnnotationPropertiesDelegate: AnyObject {
-    func didChangeColor(_ color: NSColor)
-    func didChangeLineWidth(_ width: CGFloat)
-    func didChangeIsBold(_ isBold: Bool)
-}
+    protocol AnnotationPropertiesDelegate: AnyObject {
+        func didChangeColor(_ color: NSColor)
+        func didChangeLineWidth(_ width: CGFloat)
+        func didChangeIsBold(_ isBold: Bool)
+        func didChangeIsFilled(_ isFilled: Bool)
+        func didChangeIsRounded(_ isRounded: Bool)
+    }
 
 class ColorButton: NSButton {
     var color: NSColor = .red {
@@ -16,11 +18,26 @@ class ColorButton: NSButton {
         didSet { needsDisplay = true }
     }
     
+    var isCustom: Bool = false {
+        didSet { needsDisplay = true }
+    }
+    
     override func draw(_ dirtyRect: NSRect) {
         // Draw circle
         let path = NSBezierPath(ovalIn: bounds.insetBy(dx: 4, dy: 4))
-        color.setFill()
-        path.fill()
+        
+        if isCustom {
+            // Draw gradient/spectrum for custom color button
+            // Simple approach: Draw a gradient or an image
+            NSGraphicsContext.saveGraphicsState()
+            path.addClip()
+            let gradient = NSGradient(colors: [.red, .yellow, .green, .cyan, .blue, .magenta])
+            gradient?.draw(in: bounds, angle: 45)
+            NSGraphicsContext.restoreGraphicsState()
+        } else {
+            color.setFill()
+            path.fill()
+        }
         
         // Draw selection ring
         if isSelected {
@@ -35,25 +52,58 @@ class ColorButton: NSButton {
 class AnnotationPropertiesView: NSView {
     weak var delegate: AnnotationPropertiesDelegate?
     
+    // UI Components
+    private var sizeSlider: NSSlider?
+    private var sizeValueLabel: NSTextField?
+    private var opacitySlider: NSSlider?
+    private var opacityValueLabel: NSTextField?
     private var colorButtons: [ColorButton] = []
-    private var widthButtons: [NSButton] = []
     private var boldButton: NSButton?
-    private var sizeLabel: NSTextField?
+    private var fillCheckbox: NSButton?
+    private var roundedCheckbox: NSButton?
     
-    private let colors: [NSColor] = [.red, .yellow, .green, .blue, .white, .black]
-    private let widths: [CGFloat] = [2.0, 4.0, 8.0]
+    // State
+    private let colors: [NSColor] = [.red, .magenta, .blue, .yellow, .green] // 5 fixed colors + 1 custom
+    private var currentType: AnnotationType = .rectangle
     
     var selectedColor: NSColor = .red {
-        didSet { updateColorSelection() }
+        didSet {
+            updateUIFromSelection()
+        }
     }
     
     var selectedWidth: CGFloat = 4.0 {
-        didSet { updateWidthSelection() }
+        didSet {
+            updateUIFromSelection()
+        }
     }
     
     var isBold: Bool = false {
-        didSet { updateBoldSelection() }
+        didSet {
+            // Checkbox logic for bold? Or button?
+            // If Text, we might reuse checkbox or keep button?
+            // User screenshot shows checkboxes for Rect.
+            // Let's assume Text uses "Bold" checkbox if we unify.
+            // Or keep boldButton for Text.
+            boldButton?.state = isBold ? .on : .off
+        }
     }
+    
+    var isFilled: Bool = false {
+        didSet {
+            fillCheckbox?.state = isFilled ? .on : .off
+        }
+    }
+    
+    var isRounded: Bool = false {
+        didSet {
+            roundedCheckbox?.state = isRounded ? .on : .off
+        }
+    }
+    
+    // Internal state to decouple slider from color picking
+    private var currentOpacity: CGFloat = 1.0
+    private var baseColor: NSColor = .red
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -76,68 +126,96 @@ class AnnotationPropertiesView: NSView {
     }
     
     private func setupControls() {
-        // We'll create all controls but hide/show them in configure(for:)
+        // --- Layout Constants ---
+        // Reference screenshot layout
         
-        let buttonSize: CGFloat = 24
-        let spacing: CGFloat = 8
         let padding: CGFloat = 8
-        let rowHeight: CGFloat = 32
+        let leftSectionWidth: CGFloat = 130 // Size/Opacity
+        let middleSectionWidth: CGFloat = 80 // Colors (3 cols)
+        let rightSectionWidth: CGFloat = 60  // Checkboxes
+        let height: CGFloat = 64
         
-        // --- Row 1: Width/Size Selection ---
-        let row1Y: CGFloat = padding + rowHeight + 4
+        self.frame.size = CGSize(width: padding + leftSectionWidth + padding + middleSectionWidth + padding + rightSectionWidth + padding, height: height)
         
-        let label = NSTextField(labelWithString: "大小")
-        label.font = NSFont.systemFont(ofSize: 12)
-        label.textColor = .secondaryLabelColor
-        label.frame = CGRect(x: padding, y: row1Y + 4, width: 30, height: 16)
-        addSubview(label)
-        self.sizeLabel = label
+        // --- Left Section: Sliders ---
+        let rowHeight: CGFloat = 20
+        let rowSpacing: CGFloat = 8
+        let row1Y = height - padding - rowHeight // Top row
+        let row2Y = row1Y - rowHeight - rowSpacing // Bottom row
         
-        var xOffset = label.frame.maxX + spacing
+        // Font for labels
+        let labelFont = NSFont.systemFont(ofSize: 11)
+        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         
-        for (index, _) in widths.enumerated() {
-            let btn = NSButton(frame: CGRect(x: xOffset, y: row1Y, width: buttonSize, height: buttonSize))
-            btn.bezelStyle = .inline
-            btn.isBordered = false
-            btn.wantsLayer = true
-            btn.layer?.cornerRadius = 4
-            btn.tag = index
-            btn.target = self
-            btn.action = #selector(widthTapped(_:))
+        // Size Slider
+        let sizeIcon = NSTextField(labelWithString: "大小")
+        sizeIcon.font = labelFont
+        sizeIcon.frame = CGRect(x: padding, y: row1Y, width: 30, height: 16)
+        sizeIcon.textColor = .secondaryLabelColor
+        addSubview(sizeIcon)
+        
+        let sSlider = NSSlider(value: 4.0, minValue: 1.0, maxValue: 20.0, target: self, action: #selector(sizeSliderChanged(_:)))
+        sSlider.frame = CGRect(x: padding + 32, y: row1Y, width: 70, height: 16)
+        sSlider.controlSize = .small
+        addSubview(sSlider)
+        self.sizeSlider = sSlider
+        
+        let sLabel = NSTextField(labelWithString: "4")
+        sLabel.frame = CGRect(x: sSlider.frame.maxX + 4, y: row1Y, width: 24, height: 16)
+        sLabel.font = valueFont
+        sLabel.textColor = .secondaryLabelColor
+        addSubview(sLabel)
+        self.sizeValueLabel = sLabel
+        
+        // Opacity Slider
+        let opIcon = NSTextField(labelWithString: "不透明度")
+        opIcon.font = labelFont
+        opIcon.frame = CGRect(x: padding, y: row2Y, width: 48, height: 16)
+        opIcon.textColor = .secondaryLabelColor
+        addSubview(opIcon)
+        
+        let oSlider = NSSlider(value: 100.0, minValue: 0.0, maxValue: 100.0, target: self, action: #selector(opacitySliderChanged(_:)))
+        oSlider.frame = CGRect(x: padding + 50, y: row2Y, width: 52, height: 16)
+        oSlider.controlSize = .small
+        addSubview(oSlider)
+        self.opacitySlider = oSlider
+        
+        let oLabel = NSTextField(labelWithString: "100")
+        oLabel.frame = CGRect(x: oSlider.frame.maxX + 4, y: row2Y, width: 24, height: 16)
+        oLabel.font = valueFont
+        oLabel.textColor = .secondaryLabelColor
+        addSubview(oLabel)
+        self.opacityValueLabel = oLabel
+        
+        // --- Separator 1 ---
+        let sep1 = NSView(frame: CGRect(x: padding + leftSectionWidth + padding/2, y: padding, width: 1, height: height - padding*2))
+        sep1.wantsLayer = true
+        sep1.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        addSubview(sep1)
+        
+        // --- Middle Section: Colors ---
+        // 6 Colors, 3 Cols x 2 Rows
+        let colorSize: CGFloat = 18 // Larger dots as per screenshot
+        let colorSpacing: CGFloat = 8
+        let colorStartX = sep1.frame.maxX + padding/2
+        
+        // Calculate content width to center it
+        let colorsContentWidth = colorSize * 3 + colorSpacing * 2
+        let colorsPaddingX = (middleSectionWidth - colorsContentWidth) / 2
+        
+        // Center color block vertically
+        // Content height = 18 + 8 + 18 = 44
+        // View height 64. Margin = (64-44)/2 = 10.
+        let colorBlockY = (height - (colorSize * 2 + colorSpacing)) / 2
+        
+        for (index, color) in colors.enumerated() {
+            let row = index < 3 ? 0 : 1
+            let col = index < 3 ? index : index - 3
             
-            let titles = ["S", "M", "L"]
-            btn.title = titles[index]
+            let x = colorStartX + colorsPaddingX + CGFloat(col) * (colorSize + colorSpacing)
+            let y = row == 0 ? (colorBlockY + colorSize + colorSpacing) : colorBlockY
             
-            addSubview(btn)
-            widthButtons.append(btn)
-            xOffset += buttonSize + spacing
-        }
-        
-        // Add Bold Button (initially hidden, shown for Text)
-        let boldBtn = NSButton(frame: CGRect(x: xOffset, y: row1Y, width: buttonSize, height: buttonSize))
-        boldBtn.bezelStyle = .inline
-        boldBtn.isBordered = false
-        boldBtn.wantsLayer = true
-        boldBtn.layer?.cornerRadius = 4
-        boldBtn.image = NSImage(systemSymbolName: "bold", accessibilityDescription: "Bold")
-        boldBtn.target = self
-        boldBtn.action = #selector(boldTapped(_:))
-        addSubview(boldBtn)
-        self.boldButton = boldBtn
-        
-        // --- Row 2: Color Selection ---
-        let row2Y: CGFloat = padding
-        
-        let colorLabel = NSTextField(labelWithString: "颜色")
-        colorLabel.font = NSFont.systemFont(ofSize: 12)
-        colorLabel.textColor = .secondaryLabelColor
-        colorLabel.frame = CGRect(x: padding, y: row2Y + 4, width: 30, height: 16)
-        addSubview(colorLabel)
-        
-        xOffset = colorLabel.frame.maxX + spacing
-        
-        for color in colors {
-            let btn = ColorButton(frame: CGRect(x: xOffset, y: row2Y, width: buttonSize, height: buttonSize))
+            let btn = ColorButton(frame: CGRect(x: x, y: y, width: colorSize, height: colorSize))
             btn.color = color
             btn.target = self
             btn.action = #selector(colorTapped(_:))
@@ -145,118 +223,216 @@ class AnnotationPropertiesView: NSView {
             btn.title = ""
             addSubview(btn)
             colorButtons.append(btn)
-            xOffset += buttonSize + spacing
         }
         
-        // Default Configuration
-        configure(for: .rectangle) // Default to generic shape
+        // Custom Color Button (Last spot: Row 1, Col 2 -> Index 5)
+        let customX = colorStartX + colorsPaddingX + 2 * (colorSize + colorSpacing)
+        let customY = colorBlockY // Bottom row
+        
+        let customBtn = ColorButton(frame: CGRect(x: customX, y: customY, width: colorSize, height: colorSize))
+        customBtn.color = NSColor.systemTeal // Placeholder, will be rainbow or wheel
+        customBtn.isCustom = true // We need to add this property
+        customBtn.target = self
+        customBtn.action = #selector(customColorTapped(_:))
+        customBtn.isBordered = false
+        customBtn.title = ""
+        addSubview(customBtn)
+        colorButtons.append(customBtn)
+        
+        // --- Separator 2 ---
+        let sep2 = NSView(frame: CGRect(x: colorStartX + middleSectionWidth, y: padding, width: 1, height: height - padding*2))
+        sep2.wantsLayer = true
+        sep2.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        addSubview(sep2)
+        
+        // --- Right Section: Checkboxes ---
+        // Add slightly more padding after separator
+        let checkStartX = sep2.frame.maxX + 10
+        
+        // Row 1: Fill
+        let fillCheck = NSButton(checkboxWithTitle: "实心", target: self, action: #selector(fillTapped(_:)))
+        fillCheck.frame = CGRect(x: checkStartX, y: row1Y, width: 60, height: 16)
+        fillCheck.font = labelFont
+        fillCheck.controlSize = .small
+        addSubview(fillCheck)
+        self.fillCheckbox = fillCheck
+        
+        // Row 2: Rounded
+        let roundCheck = NSButton(checkboxWithTitle: "圆角", target: self, action: #selector(roundedTapped(_:)))
+        roundCheck.frame = CGRect(x: checkStartX, y: row2Y, width: 60, height: 16)
+        roundCheck.font = labelFont
+        roundCheck.controlSize = .small
+        addSubview(roundCheck)
+        self.roundedCheckbox = roundCheck
+        
+        // Bold Button (For Text Tool) - Initially hidden, maybe overlay on top or replace?
+        // Let's create it but hide it.
+        let boldBtn = NSButton(frame: CGRect(x: checkStartX, y: row1Y, width: 24, height: 20))
+        boldBtn.bezelStyle = .inline
+        boldBtn.image = NSImage(systemSymbolName: "bold", accessibilityDescription: "Bold")
+        boldBtn.controlSize = .small
+        boldBtn.target = self
+        boldBtn.action = #selector(boldTapped(_:))
+        boldBtn.isHidden = true
+        addSubview(boldBtn)
+        self.boldButton = boldBtn
+        
+        // Initial State
+        updateUIFromSelection()
     }
     
     // MARK: - Configuration
     
     func configure(for type: AnnotationType) {
-        let padding: CGFloat = 8
-        let rowHeight: CGFloat = 32
+        self.currentType = type
         
-        // Layout constants
-        let row1Y: CGFloat = padding + rowHeight + 4
-        var xOffset: CGFloat = (sizeLabel?.frame.maxX ?? 38) + 8
-        let buttonSize: CGFloat = 24
-        let spacing: CGFloat = 8
-        
-        // 1. Configure Row 1 (Size/Style)
+        // Update Size Slider Range
         if type == .text {
-            // Text Mode: Show Font Size (reuse width buttons) and Bold
-            sizeLabel?.stringValue = "字号"
-            
-            // Show S/M/L buttons
-            for btn in widthButtons {
-                btn.isHidden = false
-                btn.frame.origin.x = xOffset
-                xOffset += buttonSize + spacing
-            }
-            
-            // Show Bold button
-            boldButton?.isHidden = false
-            boldButton?.frame.origin.x = xOffset
-            xOffset += buttonSize + spacing
-            
+            sizeSlider?.minValue = 12.0
+            sizeSlider?.maxValue = 64.0
+            sizeValueLabel?.stringValue = "\(Int(selectedWidth))pt"
         } else {
-            // Shape Mode: Show Line Width
-            sizeLabel?.stringValue = "粗细"
-            
-            // Show S/M/L buttons
-            for btn in widthButtons {
-                btn.isHidden = false
-                btn.frame.origin.x = xOffset
-                xOffset += buttonSize + spacing
-            }
-            
-            // Hide Bold button
-            boldButton?.isHidden = true
+            sizeSlider?.minValue = 1.0
+            sizeSlider?.maxValue = 20.0
+            sizeValueLabel?.stringValue = "\(Int(selectedWidth))px"
         }
         
-        // 2. Adjust Frame Width
-        // Find max X between Row 1 and Row 2
-        // Row 2 (Color) is constant width usually
-        // Color row width approx: 8 + 30 + 8 + (24+8)*6 = 46 + 192 = 238
-        // Row 1 width depends on buttons shown
+        // Toggle Bold Button (Text only)
+        boldButton?.isHidden = (type != .text)
         
-        let row1Width = xOffset + padding
-        // Recalculate color row width
-        let colorRowWidth = 8.0 + 30.0 + 8.0 + CGFloat(colors.count) * (24.0 + 8.0) + 8.0
+        // Toggle Checkboxes (Rectangle/Ellipse)
+        let isShape = (type == .rectangle || type == .ellipse)
+        fillCheckbox?.isHidden = !isShape
         
-        let totalWidth = max(row1Width, colorRowWidth)
-        let totalHeight = row1Y + rowHeight + padding
+        // Rounded only for Rectangle
+        roundedCheckbox?.isHidden = (type != .rectangle)
         
-        var frame = self.frame
-        frame.size.width = totalWidth
-        frame.size.height = totalHeight
-        self.frame = frame
-        
-        updateColorSelection()
-        updateWidthSelection()
-        updateBoldSelection()
+        // Ensure slider matches current selectedWidth (which might be in different scale)
+        sizeSlider?.doubleValue = selectedWidth
     }
     
-    private func updateColorSelection() {
+    private func updateUIFromSelection() {
+        // Extract Opacity & Base Color
+        currentOpacity = selectedColor.alphaComponent
+        baseColor = selectedColor.withAlphaComponent(1.0)
+        
+        // Update Sliders
+        sizeSlider?.doubleValue = selectedWidth
+        if currentType == .text {
+            sizeValueLabel?.stringValue = "\(Int(selectedWidth))pt"
+        } else {
+            sizeValueLabel?.stringValue = "\(Int(selectedWidth))px"
+        }
+        
+        opacitySlider?.doubleValue = Double(currentOpacity * 100)
+        opacityValueLabel?.stringValue = "\(Int(currentOpacity * 100))"
+        
+        // Update Color Buttons (compare base color)
+        // We compare RGB values to handle slight float diffs
         for btn in colorButtons {
-            btn.isSelected = (btn.color == selectedColor)
-        }
-    }
-    
-    private func updateWidthSelection() {
-        for (index, btn) in widthButtons.enumerated() {
-            let width = widths[index]
-            if width == selectedWidth {
-                btn.layer?.backgroundColor = NSColor.selectedControlColor.withAlphaComponent(0.2).cgColor
+            // If custom button, don't auto-select unless logic requires (for now just clear selection if custom)
+            if btn.isCustom {
+                // If current color is not in preset, select custom?
+                // Let's keep it simple: if no preset matches, select custom.
+                let anyMatch = colorButtons.dropLast().contains(where: { areColorsSimilar($0.color, baseColor) })
+                btn.isSelected = !anyMatch
             } else {
-                btn.layer?.backgroundColor = NSColor.clear.cgColor
+                btn.isSelected = areColorsSimilar(btn.color, baseColor)
             }
         }
-    }
-    
-    private func updateBoldSelection() {
+        
+        // Update Style Buttons
         if isBold {
-            boldButton?.layer?.backgroundColor = NSColor.selectedControlColor.withAlphaComponent(0.2).cgColor
+            boldButton?.state = .on
         } else {
-            boldButton?.layer?.backgroundColor = NSColor.clear.cgColor
+            boldButton?.state = .off
+        }
+        
+        if isFilled {
+            fillCheckbox?.state = .on
+        } else {
+            fillCheckbox?.state = .off
+        }
+        
+        if isRounded {
+            roundedCheckbox?.state = .on
+        } else {
+            roundedCheckbox?.state = .off
         }
     }
     
-    @objc private func colorTapped(_ sender: ColorButton) {
-        selectedColor = sender.color
+    private func areColorsSimilar(_ c1: NSColor, _ c2: NSColor) -> Bool {
+        guard let rc1 = c1.usingColorSpace(.sRGB), let rc2 = c2.usingColorSpace(.sRGB) else { return false }
+        return abs(rc1.redComponent - rc2.redComponent) < 0.01 &&
+               abs(rc1.greenComponent - rc2.greenComponent) < 0.01 &&
+               abs(rc1.blueComponent - rc2.blueComponent) < 0.01
+    }
+    
+    // MARK: - Actions
+    
+    @objc private func sizeSliderChanged(_ sender: NSSlider) {
+        selectedWidth = CGFloat(sender.doubleValue)
+        if currentType == .text {
+            sizeValueLabel?.stringValue = "\(Int(selectedWidth))pt"
+        } else {
+            sizeValueLabel?.stringValue = "\(Int(selectedWidth))px"
+        }
+        delegate?.didChangeLineWidth(selectedWidth)
+    }
+    
+    @objc private func opacitySliderChanged(_ sender: NSSlider) {
+        currentOpacity = CGFloat(sender.doubleValue / 100.0)
+        opacityValueLabel?.stringValue = "\(Int(sender.doubleValue))"
+        
+        // Reconstruct effective color
+        selectedColor = baseColor.withAlphaComponent(currentOpacity)
         delegate?.didChangeColor(selectedColor)
     }
     
-    @objc private func widthTapped(_ sender: NSButton) {
-        let width = widths[sender.tag]
-        selectedWidth = width
-        delegate?.didChangeLineWidth(width)
+    @objc private func colorTapped(_ sender: ColorButton) {
+        baseColor = sender.color
+        // Update selection UI immediately for feedback
+        for btn in colorButtons {
+            btn.isSelected = (btn == sender)
+        }
+        
+        // Apply current opacity
+        selectedColor = baseColor.withAlphaComponent(currentOpacity)
+        delegate?.didChangeColor(selectedColor)
     }
     
     @objc private func boldTapped(_ sender: NSButton) {
         isBold.toggle()
         delegate?.didChangeIsBold(isBold)
+    }
+
+    @objc private func fillTapped(_ sender: NSButton) {
+        isFilled.toggle()
+        delegate?.didChangeIsFilled(isFilled)
+    }
+    
+    @objc private func roundedTapped(_ sender: NSButton) {
+        isRounded.toggle()
+        delegate?.didChangeIsRounded(isRounded)
+    }
+    
+    @objc private func customColorTapped(_ sender: ColorButton) {
+        // Show Color Panel
+        let panel = NSColorPanel.shared
+        panel.setTarget(self)
+        panel.setAction(#selector(colorPanelChanged(_:)))
+        panel.color = baseColor
+        panel.orderFront(self)
+        
+        // Update selection to custom button
+        for btn in colorButtons {
+            btn.isSelected = (btn == sender)
+        }
+    }
+    
+    @objc private func colorPanelChanged(_ sender: NSColorPanel) {
+        baseColor = sender.color
+        selectedColor = baseColor.withAlphaComponent(currentOpacity)
+        delegate?.didChangeColor(selectedColor)
     }
 }

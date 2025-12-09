@@ -28,6 +28,8 @@ struct RectangleAnnotation: Annotation {
     var rect: CGRect
     var color: NSColor
     var lineWidth: CGFloat
+    var isFilled: Bool = false
+    var isRounded: Bool = false
     
     var bounds: CGRect { rect }
     
@@ -35,7 +37,29 @@ struct RectangleAnnotation: Annotation {
         context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
-        context.stroke(rect)
+        
+        let path: CGPath
+        if isRounded {
+            let radius: CGFloat = 10.0 // Fixed radius or proportional? Fixed is safer for UI.
+            path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        } else {
+            path = CGPath(rect: rect, transform: nil)
+        }
+        
+        context.addPath(path)
+        
+        if isFilled {
+            // Fill with color (respecting its alpha)
+            // If the color is fully opaque, we might want to reduce it slightly to not hide content underneath?
+            // But user said "Solid fill". Let's assume user wants the color as is (which includes alpha slider value).
+            // However, usually "Fill" implies the interior. If I set alpha to 100%, and fill, I get a solid block.
+            // Let's use the color's alpha directly.
+            context.setFillColor(color.cgColor)
+            context.drawPath(using: .fillStroke)
+        } else {
+            context.drawPath(using: .stroke)
+        }
+        
         context.restoreGState()
     }
     
@@ -59,6 +83,7 @@ struct EllipseAnnotation: Annotation {
     var rect: CGRect
     var color: NSColor
     var lineWidth: CGFloat
+    var isFilled: Bool = false
     
     var bounds: CGRect { rect }
     
@@ -66,7 +91,15 @@ struct EllipseAnnotation: Annotation {
         context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
-        context.strokeEllipse(in: rect)
+        
+        if isFilled {
+            context.setFillColor(color.cgColor)
+            context.fillEllipse(in: rect)
+            context.strokeEllipse(in: rect)
+        } else {
+            context.strokeEllipse(in: rect)
+        }
+        
         context.restoreGState()
     }
     
@@ -286,22 +319,27 @@ struct TextAnnotation: Annotation {
     }
     
     var effectiveFont: NSFont {
+        // Use lineWidth as font size (mapping 12-64pt)
+        // Ensure strictly positive
+        let size = max(12.0, lineWidth)
+        
+        // Convert existing font to new size
+        var newFont = NSFontManager.shared.convert(font, toSize: size)
+        
         if isBold {
-            return NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+            newFont = NSFontManager.shared.convert(newFont, toHaveTrait: .boldFontMask)
+        } else {
+            newFont = NSFontManager.shared.convert(newFont, toNotHaveTrait: .boldFontMask)
         }
-        return font
+        return newFont
     }
     
     func draw(in context: CGContext) {
         context.saveGState()
         
-        // Ensure we are in Fill mode for text, to prevent any residual Stroke settings
-        // from making the text look bold/outlined.
+        // Ensure we are in Fill mode for text
         context.setTextDrawingMode(.fill)
         
-        // Use a non-flipped context. The view's coordinate system should handle it.
-        // If the view is not flipped, and we use flipped: true here, it might mess up.
-        // Assuming the context passed in is already set up for the view's coordinate system.
         let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.current = nsContext
         

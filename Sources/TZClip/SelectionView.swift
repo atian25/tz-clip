@@ -482,6 +482,13 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 if let textAnnot = annot as? TextAnnotation {
                     props.isBold = textAnnot.isBold
                 }
+                if let rectAnnot = annot as? RectangleAnnotation {
+                    props.isFilled = rectAnnot.isFilled
+                    props.isRounded = rectAnnot.isRounded
+                }
+                if let ellAnnot = annot as? EllipseAnnotation {
+                    props.isFilled = ellAnnot.isFilled
+                }
                 
                 // Configure View for Type
                 props.configure(for: annot.type)
@@ -491,9 +498,10 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 // Update Layout
                 self.updatePropertiesLayout()
             } else {
-                // Keep showing props if a drawing tool is selected?
-                // For now, if nothing selected, we still might want to show props for the "Next" drawing.
-                // So we don't hide it here.
+                // If in select mode and nothing selected, hide properties
+                if self.annotationOverlay?.currentTool == .select {
+                    props.isHidden = true
+                }
             }
         }
         
@@ -705,6 +713,9 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         self.addSubview(props)
         self.propertiesView = props
         
+        // Initially hidden, waiting for tool selection
+        props.isHidden = true
+        
         // Layout
         let toolbarSize = toolbar.frame.size
         let propsSize = props.frame.size
@@ -757,11 +768,6 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         }
         
         props.frame.origin = NSPoint(x: propsX, y: propsY)
-        
-        // Initial visibility
-        props.isHidden = false // Show by default or only when tool selected?
-        // User said: "Select each tool -> secondary toolbar appears".
-        // Let's show it by default for now, as "Color/Size" are relevant for drawing too.
     }
     
     private func hideToolbar() {
@@ -800,8 +806,25 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         // Configure properties view based on selected tool
         propertiesView?.configure(for: tool)
         
-        // Ensure properties view is visible
-        propertiesView?.isHidden = false
+        // Sync properties from overlay (which now stores per-tool config)
+        if let overlay = annotationOverlay {
+            propertiesView?.selectedColor = overlay.currentColor
+            propertiesView?.selectedWidth = overlay.currentLineWidth
+            if tool == .text {
+                propertiesView?.isBold = overlay.currentIsBold
+            }
+            if tool == .rectangle {
+                propertiesView?.isRounded = overlay.currentIsRounded
+            }
+            propertiesView?.isFilled = overlay.currentIsFilled
+        }
+        
+        // Only show properties view if tool is NOT .select, unless we have a selection
+        if tool == .select {
+            propertiesView?.isHidden = !(annotationOverlay?.hasSelection ?? false)
+        } else {
+            propertiesView?.isHidden = false
+        }
         
         // Update Layout if size changed
         updatePropertiesLayout()
@@ -826,7 +849,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
     
     // MARK: - Image Generation & Output
     
-    private func generateFinalImage() -> NSImage? {
+    func generateFinalImage() -> NSImage? {
         guard !selectionRect.isEmpty, let window = self.window else { return nil }
         
         // 1. Capture the screen content below our window
@@ -882,13 +905,13 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         return finalImage
     }
     
-    private func copyImageToClipboard(_ image: NSImage) {
+    func copyImageToClipboard(_ image: NSImage) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.writeObjects([image])
     }
     
-    private func saveImageToFile(_ image: NSImage) {
+    func saveImageToFile(_ image: NSImage) {
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.png, .jpeg]
         savePanel.canCreateDirectories = true
@@ -941,8 +964,16 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         annotationOverlay?.currentIsBold = isBold
     }
     
+    func didChangeIsFilled(_ isFilled: Bool) {
+        annotationOverlay?.currentIsFilled = isFilled
+    }
+    
+    func didChangeIsRounded(_ isRounded: Bool) {
+        annotationOverlay?.currentIsRounded = isRounded
+    }
+    
     // Helper to update layout
-    private func updatePropertiesLayout() {
+    func updatePropertiesLayout() {
         guard let toolbar = toolbarView, let props = propertiesView else { return }
         
         let propsSize = props.frame.size
@@ -961,6 +992,12 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
              propsY = toolbar.frame.maxY + padding
         } else {
              propsY = toolbarY - padding - propsSize.height
+        }
+        
+        // Ensure properties view doesn't go below screen bounds
+        if propsY < 0 {
+            // If it would go off-screen bottom, force it above toolbar
+            propsY = toolbar.frame.maxY + padding
         }
         
         props.frame.origin = NSPoint(x: toolbar.frame.minX, y: propsY)
