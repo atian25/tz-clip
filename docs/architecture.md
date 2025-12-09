@@ -62,7 +62,7 @@
     *   **问题**: `LSUIElement` 应用在后台启动后，难以通过 `NSApp.activate` 抢占系统焦点，导致无法响应全局快捷键（如 ESC）。
     *   **解决方案**: 在进入截图模式前，临时将 `ActivationPolicy` 切换为 `.regular`，调用 `activate(ignoringOtherApps: true)`，然后再切回（或在截图结束后切回）。
 
-### 2.2 安全网 (Safety Net)
+### 2.3 安全网 (Safety Net)
 *   **退出机制**:
     *   **CMD+Q 支持**: 必须通过 `SelectionView.keyDown` 显式监听 `Cmd+Q`，调用 `NSApp.terminate`。
     *   **菜单项**: 状态栏菜单必须包含 "Quit TZClip" 选项。
@@ -72,7 +72,7 @@
         2. 无选区时 -> 退出截图模式。
     *   **实现**: 在 `SelectionView` 和 `AppDelegate` 双重监听，确保无论焦点在哪里都能响应。
 
-### 2.3 交互细节 (Interaction)
+### 2.4 交互细节 (Interaction)
 *   **混合模式 (Hybrid Mode)**:
     *   **Idle 状态**: 
         *   同时支持 **窗口识别** (Hover) 和 **自由选区** (Drag)。
@@ -85,7 +85,7 @@
 *   **防误触**:
     *   点击选区外部不应立即重置选区，必须配合拖拽检测（阈值 > 3px）才开始新选区，防止用户误点导致选区丢失。
 
-### 2.4 模块化 (Modularity)
+### 2.5 模块化 (Modularity)
 *   **Core**: 包含截图引擎 (`SCShareableContent` 封装)、窗口管理、权限管理等底层逻辑。
 *   **UI**: 包含 `SelectionView`、工具栏 (`NSStackView` 实现)、标注画板。
 *   **Features**: 独立的业务模块（如 PinWindow, OCRService - 待开发）。
