@@ -920,7 +920,7 @@ class AnnotationOverlayView: NSView {
     private func startTextEditing(at point: CGPoint, existingText: String? = nil, existingAnnotID: UUID? = nil, isCounter: Bool = false) {
         editingAnnotationID = existingAnnotID
         
-        let initialWidth: CGFloat = existingText == nil ? 50 : 200
+        let initialWidth: CGFloat = existingText == nil ? 24 : 200
         
         let textView = NSTextView(frame: CGRect(origin: point, size: CGSize(width: initialWidth, height: 24)))
         
@@ -950,13 +950,21 @@ class AnnotationOverlayView: NSView {
         }
         textView.isRichText = false
         textView.delegate = self
-        textView.textContainerInset = NSSize(width: 8, height: 3)
-        textView.textContainer?.lineFragmentPadding = 4
+        let ps = NSMutableParagraphStyle()
+        let lh = font.ascender - font.descender
+        ps.minimumLineHeight = lh
+        ps.maximumLineHeight = lh
+        ps.lineBreakMode = .byWordWrapping
+        textView.defaultParagraphStyle = ps
+        textView.typingAttributes = [.font: font, .foregroundColor: currentColor, .paragraphStyle: ps]
+        textView.textContainerInset = NSSize(width: 8, height: 1)
+        textView.textContainer?.lineFragmentPadding = 0
         
         textView.isHorizontallyResizable = true
         textView.isVerticallyResizable = true
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.containerSize = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.lineBreakMode = .byClipping
         
         if let text = existingText {
             textView.string = text
@@ -966,10 +974,12 @@ class AnnotationOverlayView: NSView {
             }
             if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
                 layoutManager.ensureLayout(for: textContainer)
-                let usedRect = layoutManager.usedRect(for: textContainer)
                 let insetW = textView.textContainerInset.width * 2 + (textView.textContainer?.lineFragmentPadding ?? 0) * 2
                 let insetH = textView.textContainerInset.height * 2
-                textView.frame.size = CGSize(width: max(50, usedRect.width + insetW + 4), height: max(size + 4, usedRect.height + insetH))
+                let attrs: [NSAttributedString.Key: Any] = [.font: font]
+                let textSize = (textView.string as NSString).size(withAttributes: attrs)
+                let newW = max(24, ceil(textSize.width) + insetW)
+                textView.frame.size = CGSize(width: newW, height: max(lh + insetH, ceil(textSize.height) + insetH))
             } else {
                 textView.sizeToFit()
             }
@@ -982,10 +992,14 @@ class AnnotationOverlayView: NSView {
         if existingText == nil {
              if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
                  layoutManager.ensureLayout(for: textContainer)
-                 let height = layoutManager.usedRect(for: textContainer).height
-                 textView.frame.size.height = max(height + textView.textContainerInset.height * 2, size + 4)
+                 let insetW = textView.textContainerInset.width * 2 + (textView.textContainer?.lineFragmentPadding ?? 0) * 2
+                 let insetH = textView.textContainerInset.height * 2
+                 let attrs: [NSAttributedString.Key: Any] = [.font: font]
+                 let textSize = (textView.string as NSString).size(withAttributes: attrs)
+                 let newW = max(24, ceil(textSize.width) + insetW)
+                 textView.frame.size = CGSize(width: newW, height: max(ceil(textSize.height) + insetH, lh))
              }
-             textView.frame.size.width = 50
+             textView.frame.size.width = 24
         }
         
         currentEditingState = TextEditingState(
@@ -1088,6 +1102,23 @@ extension AnnotationOverlayView: NSTextViewDelegate {
     }
 
     func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        let current = textView.string as NSString
+        let newStr: NSString
+        if let rep = replacementString {
+            newStr = current.replacingCharacters(in: affectedCharRange, with: rep) as NSString
+        } else {
+            newStr = current
+        }
+        let font = textView.font ?? NSFont.systemFont(ofSize: 14)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let textSize = newStr.size(withAttributes: attrs)
+        let insetW = textView.textContainerInset.width * 2 + (textView.textContainer?.lineFragmentPadding ?? 0) * 2
+        let insetH = textView.textContainerInset.height * 2
+        let lh = font.ascender - font.descender
+        let newW = max(24, ceil(textSize.width) + insetW)
+        let newH = max(ceil(textSize.height) + insetH, lh)
+        textView.frame.size = CGSize(width: newW, height: newH)
+        textView.textContainer?.containerSize = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         return true
     }
     
@@ -1095,15 +1126,17 @@ extension AnnotationOverlayView: NSTextViewDelegate {
         guard let textView = notification.object as? NSTextView else { return }
         if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
             layoutManager.ensureLayout(for: textContainer)
-            let usedRect = layoutManager.usedRect(for: textContainer)
             let insetW = textView.textContainerInset.width * 2 + (textView.textContainer?.lineFragmentPadding ?? 0) * 2
             let insetH = textView.textContainerInset.height * 2
-            let newW = max(50, usedRect.width + insetW + 4)
-            let newH = max(usedRect.height + insetH, (textView.font?.pointSize ?? 14) + 4)
+            let lh = (textView.font?.ascender ?? 0) - (textView.font?.descender ?? 0)
+            let attrs: [NSAttributedString.Key: Any] = [.font: textView.font ?? NSFont.systemFont(ofSize: 14)]
+            let textSize = (textView.string as NSString).size(withAttributes: attrs)
+            let newW = max(24, ceil(textSize.width) + insetW)
+            let newH = max(ceil(textSize.height) + insetH, lh)
             textView.frame.size = CGSize(width: newW, height: newH)
         } else {
             textView.sizeToFit()
-            if textView.frame.width < 50 { textView.frame.size.width = 50 }
+            if textView.frame.width < 24 { textView.frame.size.width = 24 }
         }
     }
 }

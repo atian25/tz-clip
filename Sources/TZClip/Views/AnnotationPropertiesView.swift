@@ -53,6 +53,8 @@ class AnnotationPropertiesView: NSView {
     private var fontPopup: NSPopUpButton?
     private var backgroundPopup: NSPopUpButton?
     private var backgroundLabel: NSTextField?
+    private var sep1View: NSView?
+    private var sep2View: NSView?
     private let colors: [NSColor] = [.red, .magenta, .blue, .yellow, .green]
     private var currentType: AnnotationType = .rectangle
     var selectedColor: NSColor = .red { didSet { updateUIFromSelection() } }
@@ -130,6 +132,7 @@ class AnnotationPropertiesView: NSView {
         sep1.wantsLayer = true
         sep1.layer?.backgroundColor = NSColor.separatorColor.cgColor
         addSubview(sep1)
+        sep1View = sep1
         let colorSize: CGFloat = 18
         let colorSpacing: CGFloat = 8
         let colorStartX = sep1.frame.maxX + padding/2
@@ -163,6 +166,7 @@ class AnnotationPropertiesView: NSView {
         sep2.wantsLayer = true
         sep2.layer?.backgroundColor = NSColor.separatorColor.cgColor
         addSubview(sep2)
+        sep2View = sep2
         let checkStartX = sep2.frame.maxX + 10
         let fillCheck = NSButton(checkboxWithTitle: "实心", target: self, action: #selector(fillTapped(_:)))
         fillCheck.frame = CGRect(x: checkStartX, y: row1Y, width: 60, height: 16)
@@ -213,6 +217,7 @@ class AnnotationPropertiesView: NSView {
         addSubview(fontPop)
         fontPopup = fontPop
         updateUIFromSelection()
+        reflowLayout()
     }
     func configure(for type: AnnotationType) {
         currentType = type
@@ -255,10 +260,87 @@ class AnnotationPropertiesView: NSView {
 
         let leftSectionWidth: CGFloat = 140
         let middleSectionWidth: CGFloat = 72
-        let rightSectionWidth: CGFloat = 176
         let showRight = isTextOrCounter || isShape
-        let newWidth = padding + leftSectionWidth + padding + middleSectionWidth + padding + (showRight ? rightSectionWidth : 0) + padding
+        let rightWidth = computeRightSectionWidth(isTextOrCounter: isTextOrCounter, isShape: isShape)
+        let newWidth = padding + leftSectionWidth + padding + middleSectionWidth + padding + (showRight ? rightWidth : 0) + padding
         self.frame.size.width = newWidth
+        reflowLayout()
+    }
+    private func computeRightSectionWidth(isTextOrCounter: Bool, isShape: Bool) -> CGFloat {
+        let spacing: CGFloat = 8
+        var row1Width: CGFloat = 0
+        var row2Width: CGFloat = 0
+        if isShape {
+            if let f = fillCheckbox { row1Width = max(row1Width, f.intrinsicContentSize.width) }
+        }
+        if isTextOrCounter {
+            if let l = backgroundLabel, let p = backgroundPopup {
+                row1Width = max(row1Width, l.intrinsicContentSize.width + spacing + p.intrinsicContentSize.width)
+            }
+        }
+        if isTextOrCounter {
+            if let b = boldButton, let fp = fontPopup {
+                row2Width = max(row2Width, b.intrinsicContentSize.width + spacing + fp.intrinsicContentSize.width)
+            } else if let b = boldButton {
+                row2Width = max(row2Width, b.intrinsicContentSize.width)
+            }
+        }
+        if let r = roundedCheckbox, isShape { row2Width = max(row2Width, r.intrinsicContentSize.width) }
+        let base = max(row1Width, row2Width)
+        return max(176, base + 12)
+    }
+    private func reflowLayout() {
+        let padding: CGFloat = 8
+        let height: CGFloat = 64
+        let leftSectionWidth: CGFloat = 140
+        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        let maxLabelText = (currentType == .text || currentType == .counter) ? "100pt" : "20px"
+        let maxLabelWidth = (maxLabelText as NSString).size(withAttributes: [.font: valueFont]).width
+        if let sLabel = sizeValueLabel, let sSlider = sizeSlider {
+            var lw = max(maxLabelWidth, (sLabel.stringValue as NSString).size(withAttributes: [.font: valueFont]).width)
+            lw = ceil(lw) + 2
+            let sliderStartX = padding + 32
+            let sliderRightLimit = padding + leftSectionWidth
+            let avail = max(40, sliderRightLimit - sliderStartX - 4 - lw)
+            sSlider.frame = CGRect(x: sliderStartX, y: sSlider.frame.origin.y, width: avail, height: sSlider.frame.height)
+            sLabel.frame = CGRect(x: sSlider.frame.maxX + 4, y: sLabel.frame.origin.y, width: lw, height: sLabel.frame.height)
+        }
+        sep1View?.frame = CGRect(x: padding + leftSectionWidth + padding/2, y: padding, width: 1, height: height - padding*2)
+        let colorSize: CGFloat = 18
+        let colorSpacing: CGFloat = 8
+        let colorStartX = (sep1View?.frame.maxX ?? (padding + leftSectionWidth)) + padding/2
+        let colorBlockY = (height - (colorSize * 2 + colorSpacing)) / 2
+        let colorColumns: CGFloat = 3
+        let gridWidth: CGFloat = colorColumns * colorSize + (colorColumns - 1) * colorSpacing
+        for (index, btn) in colorButtons.enumerated() {
+            let row = index < 3 ? 0 : 1
+            let col = index < 3 ? index : index - 3
+            let x = colorStartX + CGFloat(col) * (colorSize + colorSpacing)
+            let y = row == 0 ? (colorBlockY + colorSize + colorSpacing) : colorBlockY
+            btn.frame = CGRect(x: x, y: y, width: colorSize, height: colorSize)
+        }
+        sep2View?.frame = CGRect(x: colorStartX + gridWidth + padding/2, y: padding, width: 1, height: height - padding*2)
+        let checkStartX = (sep2View?.frame.maxX ?? (colorStartX + gridWidth)) + 10
+        if let f = fillCheckbox, !f.isHidden {
+            var fr = f.frame; fr.origin.x = checkStartX; f.frame = fr
+        }
+        if let b = boldButton, !b.isHidden {
+            var br = b.frame; br.origin.x = checkStartX; b.frame = br
+        }
+        if let l = backgroundLabel, !l.isHidden {
+            var lr = l.frame; lr.origin.x = checkStartX; l.frame = lr
+        }
+        if let p = backgroundPopup, !p.isHidden {
+            var pr = p.frame; let labelWidth = backgroundLabel?.intrinsicContentSize.width ?? 36
+            pr.origin.x = checkStartX + labelWidth + 4; p.frame = pr
+        }
+        if let r = roundedCheckbox, !r.isHidden {
+            var rr = r.frame; rr.origin.x = checkStartX; r.frame = rr
+        }
+        if let fp = fontPopup, !fp.isHidden {
+            var fpr = fp.frame; let boldWidth = boldButton?.intrinsicContentSize.width ?? 60
+            fpr.origin.x = checkStartX + boldWidth + 8; fp.frame = fpr
+        }
     }
     private func updateUIFromSelection() {
         currentOpacity = selectedColor.alphaComponent

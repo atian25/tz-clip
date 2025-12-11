@@ -96,6 +96,16 @@
 *   **UI**: 包含 `SelectionView`、工具栏 (`NSStackView` 实现)、标注画板。
 *   **Features**: 独立的业务模块（如 PinWindow, OCRService - 待开发）。
 
+### 2.6 文本编辑尺寸与中文输入法（新增）
+* **编辑态与最终绘制统一**：`NSTextView` 的段落样式固定行高为 `font.ascender - font.descender`，`lineFragmentPadding=0`，`textContainerInset` 最小化，确保编辑态与保存后的高度一致。
+* **中文输入法合成阶段**：在 `shouldChangeTextIn` 与 `textDidChange` 中按即将生成的字符串测量宽高，立即更新 `frame.size`；同时禁用容器宽度触发的换行（`widthTracksTextView=false`，`containerSize.width=∞`，`lineBreakMode=byClipping`），避免拼音候选导致的提前换行。
+* **初始宽度策略**：新文本框初始宽度降至 24，以减少宽度不足带来的误换行；随输入动态扩展。
+
+### 2.7 属性面板自适应布局（新增）
+* **宽度计算**：右侧区宽度按可见控件内容测量（底色/粗体/字体），最小 176；颜色矩阵栅格宽度固定，分隔线位置随栅格计算。
+* **数值标签**：左侧“大小/不透明度”数值标签按最大字符串测量（形状 `20px`，文字/序号 `100pt`），滑块宽度自适应。
+* **摆放避让**：使用组件 `fittingSize` 进行工具栏上下的自动避让，避免遮挡与重叠。
+
 ## 3. 关键技术决策
 *   **最低版本**: macOS 13.0 (Ventura)。
 *   **语言版本**: Swift 5.9。
