@@ -810,12 +810,12 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         if let overlay = annotationOverlay {
             propertiesView?.selectedColor = overlay.currentColor
             propertiesView?.selectedWidth = overlay.currentLineWidth
-            if tool == .text {
-            propertiesView?.isBold = overlay.currentIsBold
-            propertiesView?.outlineStyle = overlay.currentOutlineStyle
-            propertiesView?.outlineColor = overlay.currentOutlineColor
-            propertiesView?.fontName = overlay.currentFontName
-        }
+            if tool == .text || tool == .counter {
+                propertiesView?.isBold = overlay.currentIsBold
+                propertiesView?.outlineStyle = overlay.currentOutlineStyle
+                propertiesView?.outlineColor = overlay.currentOutlineColor
+                propertiesView?.fontName = overlay.currentFontName
+            }
         if tool == .rectangle {
                 propertiesView?.isRounded = overlay.currentIsRounded
             }

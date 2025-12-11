@@ -41,7 +41,7 @@ class AnnotationOverlayView: NSView {
         var isRounded: Bool = false
         var outlineStyle: Int = 0
         var outlineColor: NSColor = .black
-        var fontName: String = "System Default"
+        var fontName: String = "系统默认"
     }
     
     private var toolConfigs: [AnnotationType: ToolConfig] = [:]
@@ -300,7 +300,7 @@ class AnnotationOverlayView: NSView {
         let size = max(10.0, min(100.0, currentLineWidth))
         
         var font: NSFont
-        if currentFontName == "System Default" {
+        if currentFontName == "System Default" || currentFontName == "系统默认" {
             font = NSFont.systemFont(ofSize: size)
         } else {
             font = NSFont(name: currentFontName, size: size) ?? NSFont.systemFont(ofSize: size)

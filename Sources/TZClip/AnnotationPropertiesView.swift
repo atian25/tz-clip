@@ -121,12 +121,12 @@ class AnnotationPropertiesView: NSView {
         }
     }
     
-    var fontName: String = "System Default" {
+    var fontName: String = "系统默认" {
         didSet {
             if let item = fontPopup?.item(withTitle: fontName) {
                 fontPopup?.select(item)
             } else {
-                fontPopup?.selectItem(at: 0) // Default
+                fontPopup?.selectItem(at: 0)
             }
         }
     }
@@ -162,7 +162,7 @@ class AnnotationPropertiesView: NSView {
         let padding: CGFloat = 8
         let leftSectionWidth: CGFloat = 130 // Size/Opacity
         let middleSectionWidth: CGFloat = 80 // Colors (3 cols)
-        let rightSectionWidth: CGFloat = 60  // Checkboxes
+        let rightSectionWidth: CGFloat = 64
         let height: CGFloat = 64
         
         self.frame.size = CGSize(width: padding + leftSectionWidth + padding + middleSectionWidth + padding + rightSectionWidth + padding, height: height)
@@ -297,7 +297,7 @@ class AnnotationPropertiesView: NSView {
         
         // Bold Button (For Text Tool) - Initially hidden, maybe overlay on top or replace?
         // Let's create it but hide it.
-        let boldBtn = NSButton(frame: CGRect(x: checkStartX, y: row1Y, width: 24, height: 20))
+        let boldBtn = NSButton(frame: CGRect(x: checkStartX + 48, y: row2Y, width: 16, height: 16))
         boldBtn.bezelStyle = .inline
         boldBtn.image = NSImage(systemSymbolName: "bold", accessibilityDescription: "Bold")
         boldBtn.controlSize = .small
@@ -336,7 +336,7 @@ class AnnotationPropertiesView: NSView {
         self.outlineColorWell = outlineColor
         
         // Font Popup (Bottom Row)
-        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX, y: row2Y, width: 64, height: 16), pullsDown: false)
+        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX, y: row2Y, width: 48, height: 16), pullsDown: false)
         fontPop.addItem(withTitle: "系统默认")
         // Add some common fonts
         let commonFonts = ["Helvetica", "Arial", "Times New Roman", "Courier New", "Verdana"]
@@ -407,11 +407,9 @@ class AnnotationPropertiesView: NSView {
             outlineColorWell?.frame.origin = CGPoint(x: checkStartX + 48, y: row1Y)
             
             // Font Popup (Bottom Row)
-            fontPopup?.frame.size.width = 64 // Full width
+            fontPopup?.frame.size.width = 48
             fontPopup?.frame.origin = CGPoint(x: checkStartX, y: row2Y)
-            
-            // Bold Button
-            boldButton?.frame.origin = CGPoint(x: checkStartX - 24, y: row2Y)
+            boldButton?.frame.origin = CGPoint(x: checkStartX + 48, y: row2Y)
             boldButton?.isHidden = false
         } else {
             // Reset logic for other tools? Bold is hidden anyway.
