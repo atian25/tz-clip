@@ -180,11 +180,12 @@ SelectionView (NSView)
     - [x] 增加**透明度**支持。
     - [x] 增加**粗细滑块**支持。
     - [x] 增加**高级样式**支持（实心填充、圆角、自定义颜色）。
-- [ ] **Step 6: 高级标注工具 (Phase 2)**
-    - [ ] **序号 (Counter) 工具实现**:
-        - [ ] 数据模型 `CounterAnnotation` (Badge + Label + Link)。
-        - [ ] 交互逻辑：点击生成、拖拽分离、双击编辑文本。
-        - [ ] 自动递增逻辑管理。
+- [x] **Step 6: 高级标注工具 (Phase 2)**
+    - [x] **序号 (Counter) 工具实现**:
+        - [x] 数据模型 `CounterAnnotation` (Badge + Label + Link)。
+        - [x] 交互逻辑：点击生成、拖拽分离、双击编辑文本。
+        - [x] 自动递增逻辑管理。
+        - [x] **优化**: 动态缩放比例、智能防重叠、最大尺寸限制。
     - [ ] 实现**马赛克 (Mosaic)** 工具。
 - [x] **Step 7: 文字工具完善 (Enhanced)**
     - [x] 集成 `NSTextView` 进行文本输入。

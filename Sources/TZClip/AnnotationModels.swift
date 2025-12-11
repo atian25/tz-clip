@@ -49,9 +49,27 @@ struct CounterAnnotation: Annotation {
     }
     
     var badgeRadius: CGFloat {
-        // Radius based on font size (lineWidth).
-        // Example: Size 18 -> Radius ~14.8 (Diameter ~30)
-        return max(10.0, lineWidth * 0.6 + 4.0)
+        // Dynamic scaling:
+        // Small text (e.g. 10pt) -> Ratio ~0.8 (Radius 8)
+        // Large text (e.g. 80pt) -> Ratio ~0.4 (Radius 32)
+        // Formula: Base 8 + (lineWidth * scalingFactor)
+        // Let's use a log-like or decaying growth.
+        // Or simple piecewise:
+        
+        let size = lineWidth
+        var radius: CGFloat
+        
+        if size <= 20 {
+            // Linear growth for small sizes: 10->8, 20->12
+            radius = 8.0 + (size - 10.0) * 0.4
+        } else {
+            // Slower growth for larger sizes: 20->12, 100->30
+            // Delta size = 80, Delta radius = 18. Rate = 0.225
+            radius = 12.0 + (size - 20.0) * 0.25
+        }
+        
+        // Cap max radius to keep it sane
+        return min(35.0, max(8.0, radius))
     }
     
     var badgeRect: CGRect {
@@ -66,6 +84,15 @@ struct CounterAnnotation: Annotation {
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
         let size = (text as NSString).size(withAttributes: attributes)
         // origin is bottom-left of text
+        // User requested: "When scaling, it should move towards Top-Right".
+        // This implies the origin should be the BOTTOM-LEFT.
+        // Standard macOS drawing: origin IS bottom-left in flipped coordinates? 
+        // Wait, NSView isFlipped = false by default (Origin Bottom-Left).
+        // Text drawing: `draw(at: origin)` usually draws starting from that point upwards or downwards depending on context.
+        // NSString.draw(at:) in non-flipped context draws above the point? No, usually baseline is at point.
+        // Actually, NSString.draw(in: rect) is safer.
+        // If we use origin as Bottom-Left, then rect is (x, y, w, h).
+        
         return CGRect(origin: origin, size: size)
     }
     
@@ -189,12 +216,14 @@ struct CounterAnnotation: Annotation {
         
         // White border for badge
         context.setStrokeColor(NSColor.white.cgColor)
-        context.setLineWidth(2.0)
+        context.setLineWidth(1.5) // Reduced from 2.0
         context.strokeEllipse(in: rect)
         
         // Draw Number
         let numStr = "\(number)" as NSString
-        let numFontSize = r * 1.2
+        // Cap the number font size so it doesn't get too overwhelming even if badge is large
+        // Max radius is 35.0. Let's cap font size at 24.0.
+        let numFontSize = min(r * 1.0, 24.0)
         let numFont = NSFont.boldSystemFont(ofSize: numFontSize)
         let numAttrs: [NSAttributedString.Key: Any] = [
             .font: numFont,

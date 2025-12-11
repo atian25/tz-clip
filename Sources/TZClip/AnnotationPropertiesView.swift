@@ -369,7 +369,7 @@ class AnnotationPropertiesView: NSView {
         let checkStartX = fillCheckbox?.frame.minX ?? 238
         
         // Update Size Slider Range
-        if type == .text {
+        if type == .text || type == .counter {
             sizeSlider?.minValue = 10.0
             sizeSlider?.maxValue = 100.0
             sizeValueLabel?.stringValue = "\(Int(selectedWidth))pt"
@@ -426,7 +426,7 @@ class AnnotationPropertiesView: NSView {
         
         // Update Sliders
         sizeSlider?.doubleValue = selectedWidth
-        if currentType == .text {
+        if currentType == .text || currentType == .counter {
             sizeValueLabel?.stringValue = "\(Int(selectedWidth))pt"
         } else {
             sizeValueLabel?.stringValue = "\(Int(selectedWidth))px"
@@ -487,7 +487,7 @@ class AnnotationPropertiesView: NSView {
     
     @objc private func sizeSliderChanged(_ sender: NSSlider) {
         selectedWidth = CGFloat(sender.doubleValue)
-        if currentType == .text {
+        if currentType == .text || currentType == .counter {
             sizeValueLabel?.stringValue = "\(Int(selectedWidth))pt"
         } else {
             sizeValueLabel?.stringValue = "\(Int(selectedWidth))px"

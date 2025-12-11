@@ -501,10 +501,11 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 // Update Layout
                 self.updatePropertiesLayout()
             } else {
-                // If in select mode and nothing selected, hide properties
-                if self.annotationOverlay?.currentTool == .select {
-                    props.isHidden = true
-                }
+                // If nothing is selected, hide properties to keep screen clean
+                // This applies to all tools (Creation tools included)
+                // User can re-enable properties by selecting an item or re-selecting the tool (if implemented),
+                // but effectively this supports the "Click Away -> Done" workflow.
+                props.isHidden = true
             }
         }
         

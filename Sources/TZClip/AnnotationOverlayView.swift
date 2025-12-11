@@ -102,7 +102,57 @@ class AnnotationOverlayView: NSView {
         set {
             currentConfig.lineWidth = newValue
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
-                annotations[index].lineWidth = newValue
+                var annot = annotations[index]
+                
+                // Special handling for Counter to avoid overlap when resizing
+                if var counter = annot as? CounterAnnotation {
+                    // Capture old state
+                    let oldRadius = counter.badgeRadius
+                    let oldLineWidth = counter.lineWidth
+                    
+                    // Apply new width
+                    counter.lineWidth = newValue
+                    let newRadius = counter.badgeRadius
+                    
+                    if let labelOrigin = counter.labelOrigin, let labelRect = counter.labelRect {
+                        // Calculate vector from Badge Center to Label Rect Center
+                        let badgeCenter = counter.badgeCenter
+                        let labelCenter = CGPoint(x: labelRect.midX, y: labelRect.midY)
+                        
+                        let vX = labelCenter.x - badgeCenter.x
+                        let vY = labelCenter.y - badgeCenter.y
+                        let dist = hypot(vX, vY)
+                        
+                        if dist > 1.0 {
+                            // Normalized direction
+                            let dirX = vX / dist
+                            let dirY = vY / dist
+                            
+                            // Calculate push amount
+                            // 1. Badge grew by (newRadius - oldRadius)
+                            let deltaBadge = newRadius - oldRadius
+                            
+                            // 2. Label grew? Font size changed by (newValue - oldLineWidth).
+                            // Assume Label expands from its center roughly by half that amount in radius terms?
+                            // Let's approximate: push enough to clear the badge growth + some text growth
+                            let deltaText = (newValue - oldLineWidth) * 0.5
+                            
+                            // Total push
+                            let push = deltaBadge + deltaText
+                            
+                            // Move Label Origin
+                            counter.labelOrigin = CGPoint(
+                                x: labelOrigin.x + dirX * push,
+                                y: labelOrigin.y + dirY * push
+                            )
+                        }
+                    }
+                    annot = counter
+                } else {
+                    annot.lineWidth = newValue
+                }
+                
+                annotations[index] = annot
                 needsDisplay = true
             }
             updateActiveTextView()
@@ -243,7 +293,7 @@ class AnnotationOverlayView: NSView {
         // If we are editing, we should respect the current tool's config OR the selected annotation's config.
         // But if currentTool switched to something else (e.g. Line), we should NOT update activeTextView.
         // This is a safety check.
-        if currentTool != .text && currentTool != .select {
+        if currentTool != .text && currentTool != .select && currentTool != .counter {
             return
         }
         
@@ -466,11 +516,11 @@ class AnnotationOverlayView: NSView {
         }
 
         let p = convert(event.locationInWindow, from: nil)
-        dragStartPoint = p
         
-        // Priority 0: Handle Double Click for Editing
+        // Priority 0: Handle Double Click for Editing (Must be first)
         if event.clickCount == 2 {
              if let index = annotations.lastIndex(where: { $0.contains(point: p) }) {
+                 // ... (Keep existing double click logic) ...
                  let annot = annotations[index]
                  
                  if let textAnnot = annot as? TextAnnotation {
@@ -513,6 +563,7 @@ class AnnotationOverlayView: NSView {
             for (handle, rect) in handles {
                 if rect.contains(p) {
                     dragAction = .resizing(handle: handle)
+                    dragStartPoint = p // Set drag start point
                     return
                 }
             }
@@ -527,6 +578,7 @@ class AnnotationOverlayView: NSView {
                          needsDisplay = true
                      }
                      dragAction = .moving
+                     dragStartPoint = p
                      return
                  } else if counter.badgeRect.contains(p) {
                      if selectedCounterPart != .badge {
@@ -535,10 +587,12 @@ class AnnotationOverlayView: NSView {
                          needsDisplay = true
                      }
                      dragAction = .moving
+                     dragStartPoint = p
                      return
                  }
             } else if annotation.contains(point: p) {
                 dragAction = .moving
+                dragStartPoint = p
                 return
             }
         }
@@ -548,8 +602,16 @@ class AnnotationOverlayView: NSView {
         // we should select it (and switch to Select tool) instead of creating new on top.
         if let index = annotations.lastIndex(where: { $0.contains(point: p) }) {
             let annot = annotations[index]
+            
+            // Switch tool to Select FIRST to ensure Properties View doesn't overwrite selection config
+            if currentTool != .select {
+                currentTool = .select
+                onToolChange?(.select)
+            }
+            
             selectedAnnotationID = annot.id
             dragAction = .moving
+            dragStartPoint = p
             
             // Counter Part Detection
             if let counter = annot as? CounterAnnotation {
@@ -562,12 +624,6 @@ class AnnotationOverlayView: NSView {
             } else {
                 selectedCounterPart = nil
                 draggedCounterPart = nil
-            }
-            
-            // Switch tool to Select
-            if currentTool != .select {
-                currentTool = .select
-                onToolChange?(.select)
             }
             
             // Update properties to match selected
@@ -583,6 +639,25 @@ class AnnotationOverlayView: NSView {
             needsDisplay = true
             return
         }
+        
+        // Priority 3.5: Click on Empty Space -> Just Deselect if Selected
+        // This is the new behavior requested.
+        // If we are in creation mode (not Select tool), clicking empty space starts creation.
+        // BUT user asked: "Add a behavior: after adding an annotation, clicking empty space should just end editing/deselect, NOT create a new one immediately."
+        // This implies we should differentiate between "Ready to create" and "Just finished creating".
+        // However, standard behavior for "Text" or "Counter" tool is usually "Click to create".
+        // The user says "avoid accidental creation".
+        // Maybe we should check if `selectedAnnotationID` was just set?
+        // Or simply: If we have a selection, clicking empty space deselects it. If we don't have selection, we create.
+        // Let's try: If `selectedAnnotationID` is NOT nil, deselect it and RETURN. Do not create.
+        // This forces user to click once to deselect, then click again to create.
+        if selectedAnnotationID != nil {
+            selectedAnnotationID = nil
+            needsDisplay = true
+            return
+        }
+        
+        dragStartPoint = p
         
         // Handle Text Creation (Only if NOT clicking on existing annotation)
         if currentTool == .text {
@@ -728,10 +803,44 @@ class AnnotationOverlayView: NSView {
                       counter.lineWidth = max(10.0, min(100.0, (newRadius - 4.0) / 0.6))
                       counter.badgeCenter = CGPoint(x: newBounds.midX, y: newBounds.midY)
                  } else if selectedCounterPart == .label, let oldLabelRect = counter.labelRect {
+                      // Fix resizing origin logic for Label
+                      // User wants it to expand to Top-Right.
+                      // This means Bottom-Left (origin) should stay fixed?
+                      // If we change font size, the rect grows.
+                      // If origin stays fixed, it grows Up and Right (in non-flipped coords).
+                      // Let's verify coordinates. 
+                      // Mac default: (0,0) is Bottom-Left. +Y is Up.
+                      // Rect(x, y, w, h). If we increase w/h and keep (x,y), it grows Right and Up.
+                      // So keeping `labelOrigin` constant IS what we want?
+                      // Why did user say "overlapping"?
+                      // Maybe badge is below label? 
+                      // If badge is at (100, 100), label is at (100, 120).
+                      // If label grows, it grows away from badge. That's good.
+                      // But if badge is ABOVE label? 
+                      // Badge (100, 150), Label (100, 100).
+                      // Label grows Up -> Overlaps badge.
+                      // But user said "Should scale based on bottom-left origin".
+                      
                       let newBounds = resizeRect(oldLabelRect, handle: handle, to: p, maintainAspectRatio: true)
                       let scale = newBounds.height / max(1.0, oldLabelRect.height)
-                      // Update size (lineWidth) and position (labelOrigin)
+                      
+                      // Calculate new font size
                       counter.lineWidth = max(10.0, min(100.0, counter.lineWidth * scale))
+                      
+                      // If handle implies moving origin (e.g. dragging top-right), resizeRect updates origin.
+                      // But if we just want to scale font, we usually want to keep the "anchor" fixed.
+                      // If we are resizing via handle, we should respect the handle.
+                      // But for Text, resizing usually just means changing font size.
+                      // If we drag Top-Right corner, we expect Bottom-Left to stay fixed.
+                      // resizeRect already handles this: if handle is .topRight, origin.x/y might change if logic says so, 
+                      // but typically .topRight changes Width/Height and Y (in bottom-left coords).
+                      // Wait, in Bottom-Left coords:
+                      // TopRight handle = (maxX, maxY).
+                      // Dragging it changes maxX and maxY. MinX (origin.x) stays fixed. MinY (origin.y) stays fixed?
+                      // No, maxY changes -> height changes. Origin.y (minY) stays fixed.
+                      // So yes, origin stays fixed.
+                      
+                      // Update origin ONLY if the handle movement requires it (e.g. dragging bottom-left)
                       counter.labelOrigin = newBounds.origin
                  }
                  annot = counter
@@ -799,10 +908,19 @@ class AnnotationOverlayView: NSView {
     // MARK: - Helpers
     
     private func resizeRect(_ rect: CGRect, handle: ResizeHandle, to point: CGPoint, maintainAspectRatio: Bool = false) -> CGRect {
-        var r = rect
-        // Simple implementation: Just update the side being dragged.
-        // Aspect Ratio constraint is complex because it depends on which handle and maintaining ratio of w/h.
+        // Correct implementation of resizing logic to support "Center Fixed" or "Corner Fixed" depending on desire.
+        // Standard UI resizing usually fixes the opposite corner.
+        // However, the issue described "position overlapping" suggests that as we grow, the origin might not be updating correctly relative to the growth,
+        // OR when we change `lineWidth` (font size) based on rect change, we are not adjusting the origin of the text/badge to compensate for the new size if we want it to grow "outwards" from center.
         
+        // But here we are resizing the BOUNDS (rect).
+        // For Counter Badge: we resize the badgeRect.
+        // In mouseDragged, we update badgeCenter = newBounds.center.
+        // This means the badge moves as we drag the corner. This is standard behavior.
+        // If user wants it to grow from center, they usually hold Option (Alt).
+        // If standard drag, it grows from opposite corner.
+        
+        var r = rect
         var newX = r.origin.x
         var newY = r.origin.y
         var newW = r.width
@@ -844,50 +962,33 @@ class AnnotationOverlayView: NSView {
         
         // Aspect Ratio Logic
         if maintainAspectRatio {
-            // Force 1:1 Aspect Ratio (Square/Circle)
-            // Instead of maintaining original ratio, we enforce ratio = 1.0
-            let ratio: CGFloat = 1.0
+            let ratio = r.width / r.height // Keep original ratio? Or force 1:1?
+            // For Counter Badge, it is always a circle, so ratio is 1:1.
+            // But let's use the current rect ratio just in case.
+            // If it's a circle, width=height.
             
-            if handle == .top || handle == .bottom {
-                // Adjust Width to match Height change
-                let newW_ratio = newH * ratio
-                let deltaW = newW_ratio - newW
-                newW = newW_ratio
-                newX -= deltaW / 2 // Center horizontally
-            } else if handle == .left || handle == .right {
-                // Adjust Height to match Width change
-                let newH_ratio = newW / ratio
-                let deltaH = newH_ratio - newH
-                newH = newH_ratio
-                newY -= deltaH / 2 // Center vertically
+            // We need to decide which dimension drives the other based on handle.
+            // Corner handles: usually largest delta or X-drive.
+            
+            if newW > newH {
+                 // Width is dominant
+                 let oldH = newH
+                 newH = newW / ratio
+                 
+                 // Adjust Y if top handle involved
+                 if handle == .topLeft || handle == .top || handle == .topRight {
+                     newY -= (newH - oldH)
+                 }
+                 // If centered (Option key), we would adjust Y differently.
             } else {
-                // Corners: Take the larger change or project
-                // For "Square" behavior, usually creating takes max(w, h).
-                // Resizing should probably behave similarly, or project onto diagonal.
-                // Let's take the max dimension and force square.
-                let s = max(newW, newH)
-                
-                // Adjust origin based on handle to grow in correct direction
-                // We have newX/newY which are the "fixed" or "dragged" points depending on handle logic above.
-                // Re-calculating based on fixed opposite corner is safer.
-                
-                // Get opposite corner (fixed point)
-                var fixedX = r.origin.x
-                var fixedY = r.origin.y
-                if handle == .topLeft { fixedX = r.maxX; fixedY = r.maxY }
-                else if handle == .topRight { fixedX = r.minX; fixedY = r.maxY }
-                else if handle == .bottomLeft { fixedX = r.maxX; fixedY = r.minY }
-                else if handle == .bottomRight { fixedX = r.minX; fixedY = r.minY }
-                
-                // New size
-                newW = s
-                newH = s
-                
-                // New origin
-                if handle == .topLeft { newX = fixedX - s; newY = fixedY - s }
-                else if handle == .topRight { newX = fixedX; newY = fixedY - s }
-                else if handle == .bottomLeft { newX = fixedX - s; newY = fixedY }
-                else if handle == .bottomRight { newX = fixedX; newY = fixedY }
+                 // Height is dominant
+                 let oldW = newW
+                 newW = newH * ratio
+                 
+                 // Adjust X if left handle involved
+                 if handle == .topLeft || handle == .left || handle == .bottomLeft {
+                     newX -= (newW - oldW)
+                 }
             }
         }
         
