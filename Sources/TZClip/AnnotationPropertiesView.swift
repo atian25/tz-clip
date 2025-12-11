@@ -321,33 +321,9 @@ class AnnotationPropertiesView: NSView {
         addSubview(roundCheck)
         self.roundedCheckbox = roundCheck
         
-        // --- Text Specific Controls (Right Section Overlay) ---
-        // Reuse same area as Checkboxes
-        
-        // Outline Style Popup (Top Row)
-        let outlinePopup = NSPopUpButton(frame: CGRect(x: checkStartX, y: row1Y, width: 60, height: 16), pullsDown: false)
-        outlinePopup.addItems(withTitles: ["无", "细", "粗"]) // None, Thin, Thick
-        outlinePopup.controlSize = .small
-        outlinePopup.font = labelFont
-        outlinePopup.target = self
-        outlinePopup.action = #selector(outlineStyleChanged(_:))
-        outlinePopup.isHidden = true
-        addSubview(outlinePopup)
-        self.outlineStylePopup = outlinePopup
-        
-        // Outline Color Well (Next to Outline Popup)
-        // Adjust width of popup to fit color well?
-        // Let's make popup smaller: 40 width, ColorWell 16 width
-        outlinePopup.frame.size.width = 44
-        
-        let outlineColor = NSColorWell(frame: CGRect(x: checkStartX + 48, y: row1Y, width: 16, height: 16))
-        outlineColor.color = .black
-        outlineColor.controlSize = .mini // Does ColorWell have controlSize? No, just frame.
-        outlineColor.target = self
-        outlineColor.action = #selector(outlineColorChanged(_:))
-        outlineColor.isHidden = true
-        addSubview(outlineColor)
-        self.outlineColorWell = outlineColor
+        // 文本描边样式与颜色：按最新规范移除（不创建控件）
+        self.outlineStylePopup = nil
+        self.outlineColorWell = nil
         
         // Font Popup (Bottom Row)
         let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX + 64, y: row2Y, width: 112, height: 16), pullsDown: false)
@@ -406,20 +382,13 @@ class AnnotationPropertiesView: NSView {
         roundedCheckbox?.isHidden = (type != .rectangle)
         
         // Text/Counter Specific Controls
-        outlineStylePopup?.isHidden = !isTextOrCounter
-        outlineColorWell?.isHidden = !isTextOrCounter
+        // 最新规范：文字工具不显示描边样式/颜色
+        outlineStylePopup?.isHidden = true
+        outlineColorWell?.isHidden = true
         fontPopup?.isHidden = !isTextOrCounter
         
         if isTextOrCounter {
-            // Re-layout for Text/Counter Mode
-            // Top Row: Outline Popup (44) + Outline Color (16) + Spacing (4) = 64
-            
-            // Adjust Outline Popup width
-            outlineStylePopup?.frame.size.width = 44
-            outlineStylePopup?.frame.origin = CGPoint(x: checkStartX, y: row1Y)
-            
-            // Outline Color
-            outlineColorWell?.frame.origin = CGPoint(x: checkStartX + 48, y: row1Y)
+            // Re-layout for Text/Counter Mode（去除描边控件）
             
             // Row1 additions for Text: Bold + Background
             boldButton?.frame.origin = CGPoint(x: checkStartX + 64, y: row1Y)
@@ -484,9 +453,7 @@ class AnnotationPropertiesView: NSView {
             roundedCheckbox?.state = .off
         }
         
-        // Update Text Controls
-        outlineStylePopup?.selectItem(at: outlineStyle)
-        outlineColorWell?.color = outlineColor
+        // Update Text Controls（去除描边控件）
         if let item = fontPopup?.item(withTitle: fontName) {
             fontPopup?.select(item)
         }
