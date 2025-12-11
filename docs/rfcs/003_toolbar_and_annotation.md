@@ -200,6 +200,8 @@ SelectionView (NSView)
     - [x] **交互优化**: 自动扩容、双击编辑、属性隔离。
 - [x] **Step 8: 操作落地**
     - [x] 实现复制 (Copy) 和保存 (Save) 功能。
-    - [ ] 实现贴图 (Pin) 功能 (Phase 2)。
-    - [ ] 实现 OCR (Phase 3)。
-    - [ ] 实现长截图 (Phase 3)。
+- [ ] 实现贴图 (Pin) 功能 (Phase 2)。
+- [ ] 实现 OCR (Phase 3)。
+- [ ] 实现长截图 (Phase 3)。
+
+ 

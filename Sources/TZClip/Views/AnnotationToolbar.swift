@@ -8,6 +8,8 @@ protocol AnnotationToolbarDelegate: AnyObject {
 
 enum ToolbarAction {
     case undo
+    case redo
+    case delete
     case close
     case save
     case copy
@@ -15,43 +17,26 @@ enum ToolbarAction {
 
 class HoverButton: NSButton {
     private var trackingArea: NSTrackingArea?
-    
-    // External state to know if this button is currently "selected" (active tool)
     var isSelected: Bool = false {
-        didSet {
-            updateBackgroundColor()
-        }
+        didSet { updateBackgroundColor() }
     }
-    
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let trackingArea = trackingArea {
-            removeTrackingArea(trackingArea)
-        }
-        
+        if let trackingArea = trackingArea { removeTrackingArea(trackingArea) }
         let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways]
         trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
         addTrackingArea(trackingArea!)
     }
-    
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
-        if !isSelected {
-            layer?.backgroundColor = NSColor.lightGray.withAlphaComponent(0.2).cgColor
-        }
+        if !isSelected { layer?.backgroundColor = NSColor.lightGray.withAlphaComponent(0.2).cgColor }
     }
-    
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         updateBackgroundColor()
     }
-    
     private func updateBackgroundColor() {
-        if isSelected {
-            layer?.backgroundColor = NSColor.selectedControlColor.withAlphaComponent(0.2).cgColor
-        } else {
-            layer?.backgroundColor = NSColor.clear.cgColor
-        }
+        layer?.backgroundColor = isSelected ? NSColor.selectedControlColor.withAlphaComponent(0.2).cgColor : NSColor.clear.cgColor
     }
 }
 
@@ -60,50 +45,27 @@ class AnnotationToolbar: NSView {
     private var toolButtons: [HoverButton] = []
     private var actionButtons: [HoverButton] = []
     private var selectedTool: AnnotationType?
-    
     override init(frame: CGRect) {
         super.init(frame: frame)
         setupView()
         setupButtons()
     }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     private func setupView() {
-        self.wantsLayer = true
-        self.layer?.backgroundColor = NSColor.white.cgColor
-        self.layer?.cornerRadius = 4
-        self.layer?.shadowColor = NSColor.black.cgColor
-        self.layer?.shadowOpacity = 0.3
-        self.layer?.shadowOffset = CGSize(width: 0, height: -2)
-        self.layer?.shadowRadius = 4
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.white.cgColor
+        layer?.cornerRadius = 4
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.3
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
+        layer?.shadowRadius = 4
     }
-    
     private func setupButtons() {
-        let tools: [(String, AnnotationType)] = [
-            ("□", .rectangle),
-            ("○", .ellipse),
-            ("╱", .line),
-            ("↗", .arrow),
-            ("✎", .pen),
-            ("T", .text),
-            ("➊", .counter)
-        ]
-        
-        let actions: [(String, ToolbarAction)] = [
-            ("↩", .undo),
-            ("✕", .close),
-            ("⬇", .save),
-            ("✓", .copy)
-        ]
-        
+        let tools: [(String, AnnotationType)] = [("□", .rectangle),("○", .ellipse),("╱", .line),("↗", .arrow),("✎", .pen),("T", .text),("➊", .counter)]
+        let actions: [(String, ToolbarAction)] = [("↩", .undo),("↪", .redo),("🗑", .delete),("✕", .close),("⬇", .save),("✓", .copy)]
         var xOffset: CGFloat = 8
         let buttonSize: CGFloat = 32
         let spacing: CGFloat = 4
-        
-        // Tool Buttons
         for (title, type) in tools {
             let btn = createButton(title: title)
             btn.frame = CGRect(x: xOffset, y: 4, width: buttonSize, height: buttonSize)
@@ -114,15 +76,11 @@ class AnnotationToolbar: NSView {
             toolButtons.append(btn)
             xOffset += buttonSize + spacing
         }
-        
-        // Separator
         let separator = NSView(frame: CGRect(x: xOffset, y: 8, width: 1, height: 24))
         separator.wantsLayer = true
         separator.layer?.backgroundColor = NSColor.lightGray.cgColor
         addSubview(separator)
         xOffset += spacing + 1
-        
-        // Action Buttons
         for (title, action) in actions {
             let btn = createButton(title: title)
             btn.frame = CGRect(x: xOffset, y: 4, width: buttonSize, height: buttonSize)
@@ -133,14 +91,11 @@ class AnnotationToolbar: NSView {
             actionButtons.append(btn)
             xOffset += buttonSize + spacing
         }
-        
-        // Adjust frame width
         var frame = self.frame
         frame.size.width = xOffset + 4
         frame.size.height = 40
         self.frame = frame
     }
-    
     private func createButton(title: String) -> HoverButton {
         let btn = HoverButton()
         btn.title = title
@@ -152,7 +107,6 @@ class AnnotationToolbar: NSView {
         btn.font = NSFont.systemFont(ofSize: 16)
         return btn
     }
-    
     private func getTag(for type: AnnotationType) -> Int {
         switch type {
         case .select: return 100
@@ -165,29 +119,21 @@ class AnnotationToolbar: NSView {
         case .counter: return 107
         }
     }
-    
     private func getTag(for action: ToolbarAction) -> Int {
         switch action {
         case .undo: return 201
+        case .redo: return 205
+        case .delete: return 206
         case .close: return 202
         case .save: return 203
         case .copy: return 204
         }
     }
-    
     func selectTool(_ tool: AnnotationType) {
         selectedTool = tool
         let tag = getTag(for: tool)
-        for btn in toolButtons {
-            // Only highlight if tool is NOT .select (since .select button is removed)
-            if tool != .select && btn.tag == tag {
-                btn.isSelected = true
-            } else {
-                btn.isSelected = false
-            }
-        }
+        for btn in toolButtons { btn.isSelected = (tool != .select && btn.tag == tag) }
     }
-    
     @objc private func toolButtonTapped(_ sender: HoverButton) {
         var type: AnnotationType?
         switch sender.tag {
@@ -201,45 +147,23 @@ class AnnotationToolbar: NSView {
         case 107: type = .counter
         default: break
         }
-        
         guard let tappedType = type else { return }
-        
-        // Toggle Logic:
-        // If the tapped tool is already selected, deselect it (go back to .select mode).
-        // Otherwise, select the new tool.
-        
-        let newTool: AnnotationType
-        if selectedTool == tappedType {
-            newTool = .select
-        } else {
-            newTool = tappedType
-        }
-        
-        // Update UI
-        for btn in toolButtons {
-            if newTool != .select && btn.tag == getTag(for: newTool) {
-                btn.isSelected = true
-            } else {
-                btn.isSelected = false
-            }
-        }
-        
+        let newTool: AnnotationType = (selectedTool == tappedType) ? .select : tappedType
+        for btn in toolButtons { btn.isSelected = (newTool != .select && btn.tag == getTag(for: newTool)) }
         selectedTool = newTool
         delegate?.didSelectTool(newTool)
     }
-    
     @objc private func actionButtonTapped(_ sender: NSButton) {
         var action: ToolbarAction?
         switch sender.tag {
         case 201: action = .undo
+        case 205: action = .redo
+        case 206: action = .delete
         case 202: action = .close
         case 203: action = .save
         case 204: action = .copy
         default: break
         }
-        
-        if let action = action {
-            delegate?.didSelectAction(action)
-        }
+        if let action = action { delegate?.didSelectAction(action) }
     }
 }

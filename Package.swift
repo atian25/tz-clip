@@ -25,5 +25,9 @@ let package = Package(
                 ])
             ]
         ),
+        .testTarget(
+            name: "TZClipTests",
+            dependencies: ["TZClip"]
+        ),
     ]
 )
