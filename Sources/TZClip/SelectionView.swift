@@ -40,6 +40,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
     
     // Crosshair
     private var cursorLocation: NSPoint?
+    var isInitialized: Bool = false
     
     // Configuration
     private let handleSize: CGFloat = 8.0
@@ -85,8 +86,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         
-        // Draw Window Highlight if idle and present
-        if case .idle = state {
+        if case .idle = state, isInitialized {
             if let highlightRect = highlightWindowRect {
                 highlightBorderColor.setStroke()
                 let path = NSBezierPath(rect: highlightRect)
@@ -95,8 +95,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
             }
         }
         
-        // Draw Crosshair if idle
-        if case .idle = state, let p = cursorLocation {
+        if case .idle = state, isInitialized, let p = cursorLocation {
             drawCrosshair(at: p)
         }
         
@@ -281,16 +280,11 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         let p = convert(event.locationInWindow, from: nil)
         
         if selectionRect.isEmpty {
-            // 如果在 idle 状态
-            if case .idle = state {
+            if case .idle = state, isInitialized {
                 cursorLocation = p
-                
-                // Window Detection
-                // Disable if Command key is pressed
                 if !event.modifierFlags.contains(.command), let provider = windowProvider {
                     let globalMouseLocation = NSEvent.mouseLocation
                     if let detected = provider.window(at: globalMouseLocation) {
-                        // Convert detected global rect to view local rect
                         if let window = self.window {
                             highlightWindowRect = window.convertFromScreen(detected.frame)
                         }
@@ -300,10 +294,9 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 } else {
                     highlightWindowRect = nil
                 }
-                
                 needsDisplay = true
+                NSCursor.crosshair.set()
             }
-            NSCursor.crosshair.set()
             return
         }
         

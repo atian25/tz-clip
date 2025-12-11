@@ -62,6 +62,12 @@
     *   **问题**: `LSUIElement` 应用在后台启动后，难以通过 `NSApp.activate` 抢占系统焦点，导致无法响应全局快捷键（如 ESC）。
     *   **解决方案**: 在进入截图模式前，临时将 `ActivationPolicy` 切换为 `.regular`，调用 `activate(ignoringOtherApps: true)`，然后再切回（或在截图结束后切回）。
 
+#### 启动流程调整（初始化 gating）
+*   **顺序**: 进入截图模式时，先创建并显示各屏幕的遮罩窗口 (`OverlayWindow`)，按鼠标所在屏幕设置为 Key 并激活应用；随后异步采集窗口信息。
+*   **初始化 gating**: 在 `SelectionView` 中引入 `isInitialized` 标志，采集成功后才开启十字辅助线与窗口高亮；初始化阶段不改变光标，不显示坐标线，高亮为空，避免用户误判状态。
+*   **失败回退**: 采集失败（或权限不足）时，关闭遮罩并恢复 `.accessory`，弹出权限提示引导用户处理。
+*   **目的**: 保证第一次点击由遮罩接收、不穿透到底层窗口，同时提供明确的初始化完成信号。
+
 ### 2.3 安全网 (Safety Net)
 *   **退出机制**:
     *   **CMD+Q 支持**: 必须通过 `SelectionView.keyDown` 显式监听 `Cmd+Q`，调用 `NSApp.terminate`。

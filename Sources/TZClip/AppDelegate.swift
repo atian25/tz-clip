@@ -57,10 +57,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("Starting capture...")
         stopCapture()
         
-        // 【关键修改】临时切换为 Regular 模式以强制抢占焦点
         NSApp.setActivationPolicy(.regular)
+        showOverlayWindows()
         
-        // 异步启动流程，避免阻塞主线程（虽然 startCapture 是 @objc，但我们可以用 Task）
         Task {
             // 0. 预检查权限 (macOS 10.15+)
             let preflight = CGPreflightScreenCaptureAccess()
@@ -83,20 +82,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             
-            // 2. 显示 Overlay
-            // 逻辑修改：只要 captureWindows 成功，就显示。
-            // 如果 captureWindows 失败，且 preflight 也失败，那才弹我们的 Alert。
             if success {
                 await MainActor.run {
-                    self.showOverlayWindows()
+                    self.setOverlaysInitialized(true)
                 }
             } else {
-                // 只有在真的拿不到数据时，才恢复状态并提示
                 await MainActor.run {
-                     NSApp.setActivationPolicy(.accessory)
-                     if !preflight {
-                         self.showPermissionAlert()
-                     }
+                    self.stopCapture()
+                    NSApp.setActivationPolicy(.accessory)
+                    if !preflight {
+                        self.showPermissionAlert()
+                    }
                 }
             }
         }
@@ -147,6 +143,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 强制激活应用，确保第一次点击就能响应
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func setOverlaysInitialized(_ initialized: Bool) {
+        for controller in overlayControllers {
+            controller.setInitialized(initialized)
+        }
     }
     
     func stopCapture() {

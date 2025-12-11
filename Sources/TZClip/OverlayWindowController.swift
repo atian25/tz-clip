@@ -59,4 +59,8 @@ class OverlayWindowController: NSWindowController {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    func setInitialized(_ initialized: Bool) {
+        (self.window?.contentView as? SelectionView)?.isInitialized = initialized
+    }
 }
