@@ -168,9 +168,9 @@ class AnnotationPropertiesView: NSView {
         // Reference screenshot layout
         
         let padding: CGFloat = 8
-        let leftSectionWidth: CGFloat = 130 // Size/Opacity
-        let middleSectionWidth: CGFloat = 80 // Colors (3 cols)
-        let rightSectionWidth: CGFloat = 128
+        let leftSectionWidth: CGFloat = 120 // Size/Opacity
+        let middleSectionWidth: CGFloat = 72 // Colors (3 cols)
+        let rightSectionWidth: CGFloat = 120
         let height: CGFloat = 64
         
         self.frame.size = CGSize(width: padding + leftSectionWidth + padding + middleSectionWidth + padding + rightSectionWidth + padding, height: height)
@@ -237,9 +237,9 @@ class AnnotationPropertiesView: NSView {
         let colorSpacing: CGFloat = 8
         let colorStartX = sep1.frame.maxX + padding/2
         
-        // Calculate content width to center it
+        // 左对齐颜色矩阵
         let colorsContentWidth = colorSize * 3 + colorSpacing * 2
-        let colorsPaddingX = (middleSectionWidth - colorsContentWidth) / 2
+        let colorsPaddingX: CGFloat = 0
         
         // Center color block vertically
         // Content height = 18 + 8 + 18 = 44
@@ -296,14 +296,14 @@ class AnnotationPropertiesView: NSView {
         self.fillCheckbox = fillCheck
 
         let boldCheck = NSButton(checkboxWithTitle: "粗体", target: self, action: #selector(boldTapped(_:)))
-        boldCheck.frame = CGRect(x: checkStartX + 64, y: row1Y, width: 48, height: 16)
+        boldCheck.frame = CGRect(x: checkStartX, y: row1Y, width: 48, height: 16)
         boldCheck.font = labelFont
         boldCheck.controlSize = .small
         boldCheck.isHidden = true
         addSubview(boldCheck)
         self.boldButton = boldCheck
 
-        let bgPop = NSPopUpButton(frame: CGRect(x: checkStartX + 64 + 56, y: row1Y, width: 64, height: 16), pullsDown: false)
+        let bgPop = NSPopUpButton(frame: CGRect(x: checkStartX + 56, y: row1Y, width: 64, height: 16), pullsDown: false)
         bgPop.addItems(withTitles: ["透明", "白", "黑", "黄", "蓝", "红"])
         bgPop.controlSize = .small
         bgPop.font = labelFont
@@ -326,7 +326,7 @@ class AnnotationPropertiesView: NSView {
         self.outlineColorWell = nil
         
         // Font Popup (Bottom Row)
-        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX + 64, y: row2Y, width: 112, height: 16), pullsDown: false)
+        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX, y: row2Y, width: 96, height: 16), pullsDown: false)
         fontPop.addItem(withTitle: "系统默认")
         // Add common fonts (含中文)
         let commonFonts = [
@@ -395,12 +395,12 @@ class AnnotationPropertiesView: NSView {
             // Re-layout for Text/Counter Mode（去除描边控件）
             
             // Row1 additions for Text: Bold + Background
-            boldButton?.frame.origin = CGPoint(x: checkStartX + 64, y: row1Y)
-            backgroundPopup?.frame.origin = CGPoint(x: checkStartX + 64 + 56, y: row1Y)
+            boldButton?.frame.origin = CGPoint(x: checkStartX, y: row1Y)
+            backgroundPopup?.frame.origin = CGPoint(x: checkStartX + 56, y: row1Y)
             
             // Font Popup (Row2)
-            fontPopup?.frame.size.width = 112
-            fontPopup?.frame.origin = CGPoint(x: checkStartX + 64, y: row2Y)
+            fontPopup?.frame.size.width = 96
+            fontPopup?.frame.origin = CGPoint(x: checkStartX, y: row2Y)
             boldButton?.isHidden = false
         } else {
             // Reset logic for other tools? Bold is hidden anyway.

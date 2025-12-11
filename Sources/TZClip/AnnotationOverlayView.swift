@@ -254,7 +254,16 @@ class AnnotationOverlayView: NSView {
         get { currentConfig.textBackgroundColor }
         set {
             currentConfig.textBackgroundColor = newValue
+            // 更新正在编辑的文本背景
             updateActiveTextView()
+            // 如果当前选中的是文本标注，直接写入其背景色并重绘
+            if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
+                if var textAnnot = annotations[index] as? TextAnnotation {
+                    textAnnot.backgroundColor = newValue
+                    annotations[index] = textAnnot
+                    needsDisplay = true
+                }
+            }
         }
     }
     
