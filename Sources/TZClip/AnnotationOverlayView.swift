@@ -321,6 +321,7 @@ class AnnotationOverlayView: NSView {
             fontName: currentFontName
         )
     }
+    func resetBlankClickCreationProtection() { skipNextBlankClickCreation = false }
 
     func translateAnnotations(by delta: CGPoint) {
         guard (delta.x != 0 || delta.y != 0) else { return }

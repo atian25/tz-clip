@@ -109,3 +109,61 @@
 ## 3. 关键技术决策
 *   **最低版本**: macOS 13.0 (Ventura)。
 *   **语言版本**: Swift 5.9。
+
+## 4. 代码分层结构图（当前实现）
+
+```mermaid
+flowchart TB
+  subgraph App[应用生命周期]
+    main[main.swift]
+    appDelegate[AppDelegate]
+  end
+
+  subgraph Controllers[控制器]
+    overlayWinCtrl[OverlayWindowController]
+    selectionCtrl[SelectionController]
+    commandBus[CommandBus]
+  end
+
+  subgraph Views[视图]
+    selectionView[SelectionView]
+    overlayView[AnnotationOverlayView]
+    toolbar[AnnotationToolbar]
+    props[AnnotationPropertiesView]
+  end
+
+  subgraph Services[服务]
+    windowInfo[WindowInfoProvider]
+    snap[SnapService]
+    handleGeom[HandleGeometryService]
+    layout[ToolbarLayoutService]
+  end
+
+  subgraph State[状态]
+    toolState[ToolState]
+    selState[SelectionState]
+    overlayState[OverlayState]
+  end
+
+  subgraph Domain[领域模型]
+    annotations[Annotations\n(Rectangle/Ellipse/Line/Arrow/Pen/Text/Counter)]
+  end
+
+  App --> Controllers
+  Controllers --> Views
+  Views --> Services
+  Controllers --> Services
+  Controllers --> State
+  Views --> State
+  Views --> Domain
+  Services -.-> Domain
+  Controllers --> commandBus
+  commandBus --> App
+```
+
+### 核心理解建议
+- 从 `main.swift` 与 `AppDelegate` 入手理解应用启动、模式切换与多屏遮罩窗口创建的流程。
+- 关注 `SelectionView` 的交互状态机与绘制职责；`AnnotationOverlayView` 专注标注数据与渲染。
+- 工具与属性的事件分发通过 `SelectionController` 汇总，动作执行由 `CommandBus` 统一处理。
+- 几何与布局算法下沉为服务：吸附（`SnapService`）、手柄命中（`HandleGeometryService`）、工具栏摆放（`ToolbarLayoutService`）。
+- 窗口识别与坐标转换由 `WindowInfoProvider` 封装，初始化 gating 控制视图启用时机。

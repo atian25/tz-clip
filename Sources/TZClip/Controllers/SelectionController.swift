@@ -34,6 +34,7 @@ class SelectionController: AnnotationToolbarDelegate, AnnotationPropertiesDelega
     func didSelectTool(_ tool: AnnotationType) {
         toolState.currentTool = tool
         overlay?.currentTool = tool
+        overlay?.resetBlankClickCreationProtection()
         propertiesView?.configure(for: tool)
         let cfg = toolState.config(for: tool)
         overlay?.currentColor = cfg.color
