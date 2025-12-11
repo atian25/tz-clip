@@ -321,6 +321,19 @@ class AnnotationOverlayView: NSView {
             fontName: currentFontName
         )
     }
+
+    func translateAnnotations(by delta: CGPoint) {
+        guard (delta.x != 0 || delta.y != 0) else { return }
+        annotations = annotations.map { $0.move(by: CGPoint(x: -delta.x, y: -delta.y)) }
+        if var cur = currentAnnotation { cur = cur.move(by: CGPoint(x: -delta.x, y: -delta.y)); currentAnnotation = cur }
+        if let tv = activeTextView {
+            var f = tv.frame
+            f.origin.x -= delta.x
+            f.origin.y -= delta.y
+            tv.frame = f
+        }
+        needsDisplay = true
+    }
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

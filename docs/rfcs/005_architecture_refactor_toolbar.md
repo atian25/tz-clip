@@ -59,20 +59,20 @@ Status: Draft
 ## 4. 迁移计划（最小改造）
 
 ### Step A：抽取控制器与服务
-- 新增 `SelectionController.swift`：
+- 引入 `SelectionController.swift`：
   - 接管 `AnnotationToolbarDelegate` 与 `AnnotationPropertiesDelegate`；
   - 暴露方法用于 `SelectionView` 分发输入事件（选择/移动/缩放/删除/撤销）。
-- 新增 `SnapService.swift` 与 `HandleGeometry.swift`：迁移吸附与手柄几何/命中逻辑。
-- 新增 `ToolbarLayoutService.swift`：封装工具栏与属性面板位置计算。
+- 引入 `SnapService.swift` 与 `HandleGeometry.swift`：迁移吸附与手柄几何/命中逻辑。
+- 引入 `ToolbarLayoutService.swift`：封装工具栏与属性面板位置计算。
 
 ### Step B：状态层落地
-- 新增 `ToolState.swift`、`SelectionState.swift`、`OverlayState.swift`：
+- 引入 `ToolState.swift`、`SelectionState.swift`、`OverlayState.swift`：
   - 将 `AnnotationOverlayView` 的 `currentTool` 与 `currentColor/currentLineWidth/...` 迁出到 `ToolState`；
   - `SelectionView` 的 `state/selectionRect` 保持，但以 `SelectionState` 形式暴露给控制器与服务；
   - `OverlayState` 管理标注集合与选中项、编辑快照。
 
 ### Step C：命令化动作
-- 新增 `CommandBus.swift` 与 `Commands.swift`：实现 `Undo/Redo/Delete/Save/Copy/Close/Pin/OCR/ScrollShot`；（Pin/OCR/ScrollShot 现为占位，接口已打通）
+- 引入 `CommandBus.swift` 与 `Commands.swift`：实现 `Undo/Redo/Delete/Save/Copy/Close/Pin/OCR/ScrollShot`；（Pin/OCR/ScrollShot 现为占位，接口已打通）
 - 将 `SelectionView.didSelectAction(_:)` 中的逻辑迁移到命令执行，视图只触发命令，不直接操作 `OverlayView`。
 
 ### Step D：视图减负与订阅
@@ -177,7 +177,7 @@ Tests/TZClipTests/
   - 视图订阅状态层变化并刷新（大小/位置/属性），避免直接改模型。
 
 ### 10.4 TODO 列表（M1 范围）
-- [x] 新增 `SelectionController.swift` 文件与构造函数，接管工具/属性委托。
+- [x] 建立 `SelectionController.swift` 文件与构造函数，接管工具/属性委托。
 - [x] 定义 `ToolState/SelectionState/OverlayState` 最小数据结构并实现读写接口。
 - [x] 在 `SelectionView` 中注入 `SelectionController`，将 `didSelectTool(_:)`、属性变更与动作分发改走控制器。
 - [ ] 将选区的创建/移动/缩放事件封装为控制器调用，`SelectionView` 只负责状态机推进与调用控制器接口。
@@ -213,7 +213,7 @@ Tests/TZClipTests/
 - 徽章半径：随 `lineWidth` 低比例增长并限制最大半径（当前实现见 `CounterAnnotation.badgeRadius`）
 - 文字位置：字号变化时保持文字与徽章相对关系，必要时沿连线方向做轻微位移以避免重叠
 
-## 附录 C：测试用例（新增）
+## 附录 C：测试用例
 - `CounterAnnotationTests.testNumberFontSizeScalingAndCap`：验证数字字号随 `lineWidth` 按 0.6 比例变化，并在 20 上限封顶
 - `CounterAnnotationTests.testEffectiveFontUsesLineWidth`：验证文本字号采用 `lineWidth` 并进行 12–100 的边界夹取
 
