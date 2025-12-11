@@ -21,6 +21,17 @@ class AnnotationOverlayView: NSView {
     
     // MARK: - Properties
     
+    // Counter State
+    private var nextCounterValue: Int = 1
+    
+    // Counter Dragging State
+    private enum CounterPart {
+        case badge
+        case label
+    }
+    private var draggedCounterPart: CounterPart?
+    private var selectedCounterPart: CounterPart? // Tracks which part is selected for independent manipulation
+    
     // Independent Tool Configuration
     private struct ToolConfig {
         var color: NSColor = .red
@@ -44,7 +55,7 @@ class AnnotationOverlayView: NSView {
             }
             // Default logic
             var config = ToolConfig()
-            if tool == .text {
+            if tool == .text || tool == .counter {
                 config.lineWidth = 18.0 // Default font size
             }
             return config
@@ -203,6 +214,7 @@ class AnnotationOverlayView: NSView {
                 onSelectionChange?(annotation)
             } else {
                 onSelectionChange?(nil)
+                selectedCounterPart = nil
             }
         }
     }
@@ -212,6 +224,7 @@ class AnnotationOverlayView: NSView {
     
     // Text Editing
     private var activeTextView: NSTextView?
+    private var editingAnnotationID: UUID? // The ID of the annotation being edited (if any)
     
     // Text Editing State Snapshot
     private struct TextEditingState {
@@ -298,11 +311,20 @@ class AnnotationOverlayView: NSView {
     private func drawSelection(for annotation: Annotation, in context: CGContext) {
         context.saveGState()
         
+        // Determine bounds to draw based on selection state
+        var boundsToDraw = annotation.bounds
+        if let counter = annotation as? CounterAnnotation, let part = selectedCounterPart {
+            if part == .badge {
+                boundsToDraw = counter.badgeRect
+            } else if let labelRect = counter.labelRect {
+                boundsToDraw = labelRect
+            }
+        }
+        
         // Draw bounding box
         context.setStrokeColor(NSColor.selectedControlColor.cgColor)
         context.setLineWidth(1.0)
-        let bounds = annotation.bounds
-        context.stroke(bounds)
+        context.stroke(boundsToDraw)
         
         // Draw handles
         context.setFillColor(NSColor.white.cgColor)
@@ -322,6 +344,15 @@ class AnnotationOverlayView: NSView {
         let handleSize: CGFloat = 8
         let half = handleSize / 2
         
+        var bounds = annotation.bounds
+        if let counter = annotation as? CounterAnnotation, let part = selectedCounterPart {
+            if part == .badge {
+                bounds = counter.badgeRect
+            } else if let labelRect = counter.labelRect {
+                bounds = labelRect
+            }
+        }
+        
         if annotation.type == .line || annotation.type == .arrow {
             if let line = annotation as? LineAnnotation {
                 handles[.start] = CGRect(x: line.startPoint.x - half, y: line.startPoint.y - half, width: handleSize, height: handleSize)
@@ -339,6 +370,13 @@ class AnnotationOverlayView: NSView {
             handles[.topRight] = CGRect(x: b.maxX - half, y: b.minY - half, width: handleSize, height: handleSize)
             handles[.bottomLeft] = CGRect(x: b.minX - half, y: b.maxY - half, width: handleSize, height: handleSize)
             handles[.bottomRight] = CGRect(x: b.maxX - half, y: b.maxY - half, width: handleSize, height: handleSize)
+        } else if let _ = annotation as? CounterAnnotation {
+             // Counter Handles (4 corners of selected part)
+             let b = bounds
+             handles[.topLeft] = CGRect(x: b.minX - half, y: b.minY - half, width: handleSize, height: handleSize)
+             handles[.topRight] = CGRect(x: b.maxX - half, y: b.minY - half, width: handleSize, height: handleSize)
+             handles[.bottomLeft] = CGRect(x: b.minX - half, y: b.maxY - half, width: handleSize, height: handleSize)
+             handles[.bottomRight] = CGRect(x: b.maxX - half, y: b.maxY - half, width: handleSize, height: handleSize)
         } else {
             // Rect / Ellipse: 8 handles
             let b = annotation.bounds
@@ -391,6 +429,7 @@ class AnnotationOverlayView: NSView {
         annotations.removeAll()
         currentAnnotation = nil
         selectedAnnotationID = nil
+        nextCounterValue = 1
         needsDisplay = true
     }
     
@@ -413,6 +452,11 @@ class AnnotationOverlayView: NSView {
     // MARK: - Mouse Events
     
     override func mouseDown(with event: NSEvent) {
+        // Ensure the hosting view (SelectionView) becomes first responder so it can handle key events (like Delete)
+        if let selectionView = self.superview {
+            self.window?.makeFirstResponder(selectionView)
+        }
+
         // 0. Check if we are currently editing text.
         // If so, any click outside the text view (which ends up here) should commit the edit.
         // We swallow the event to prevent accidental creation/selection of others immediately.
@@ -428,12 +472,11 @@ class AnnotationOverlayView: NSView {
         if event.clickCount == 2 {
              if let index = annotations.lastIndex(where: { $0.contains(point: p) }) {
                  let annot = annotations[index]
+                 
                  if let textAnnot = annot as? TextAnnotation {
-                     // Deselect current annotation to prevent property setters from modifying it
-                     // (e.g. if A was selected, updating lineWidth for B should not resize A)
+                     // ... existing Text logic ...
                      selectedAnnotationID = nil
                      
-                     // Sync properties to global state so editor uses correct style
                      self.currentColor = textAnnot.color
                      self.currentLineWidth = textAnnot.lineWidth
                      self.currentIsBold = textAnnot.isBold
@@ -441,8 +484,24 @@ class AnnotationOverlayView: NSView {
                      self.currentOutlineStyle = textAnnot.outlineStyle
                      self.currentOutlineColor = textAnnot.outlineColor
                      
-                     // Start Editing existing text
                      startTextEditing(at: textAnnot.origin, existingText: textAnnot.text, existingAnnotID: textAnnot.id)
+                     return
+                 } else if let counterAnnot = annot as? CounterAnnotation {
+                     // Counter Logic
+                     selectedAnnotationID = nil
+                     self.currentColor = counterAnnot.color
+                     self.currentLineWidth = counterAnnot.lineWidth
+                     
+                     // Use existing label origin or default to ABOVE badge
+                     let origin = counterAnnot.labelOrigin ?? CGPoint(x: counterAnnot.badgeCenter.x, y: counterAnnot.badgeCenter.y + counterAnnot.badgeRadius + 5)
+                     
+                     // Prepare text properties
+                     self.currentFontName = counterAnnot.fontName
+                     self.currentIsBold = counterAnnot.isBold
+                     self.currentOutlineStyle = counterAnnot.outlineStyle
+                     self.currentOutlineColor = counterAnnot.outlineColor
+                     
+                     startTextEditing(at: origin, existingText: counterAnnot.text, existingAnnotID: counterAnnot.id, isCounter: true)
                      return
                  }
              }
@@ -459,7 +518,26 @@ class AnnotationOverlayView: NSView {
             }
             
             // Priority 2: Check Body of selected annotation (Moving)
-            if annotation.contains(point: p) {
+            // For Counter, we need to check if user clicked on a specific part to switch selection
+            if let counter = annotation as? CounterAnnotation {
+                 if let labelRect = counter.labelRect, labelRect.contains(p) {
+                     if selectedCounterPart != .label {
+                         selectedCounterPart = .label
+                         draggedCounterPart = .label
+                         needsDisplay = true
+                     }
+                     dragAction = .moving
+                     return
+                 } else if counter.badgeRect.contains(p) {
+                     if selectedCounterPart != .badge {
+                         selectedCounterPart = .badge
+                         draggedCounterPart = .badge
+                         needsDisplay = true
+                     }
+                     dragAction = .moving
+                     return
+                 }
+            } else if annotation.contains(point: p) {
                 dragAction = .moving
                 return
             }
@@ -472,6 +550,19 @@ class AnnotationOverlayView: NSView {
             let annot = annotations[index]
             selectedAnnotationID = annot.id
             dragAction = .moving
+            
+            // Counter Part Detection
+            if let counter = annot as? CounterAnnotation {
+                if let labelRect = counter.labelRect, labelRect.contains(p) {
+                    selectedCounterPart = .label
+                } else {
+                    selectedCounterPart = .badge
+                }
+                draggedCounterPart = selectedCounterPart // Sync drag state
+            } else {
+                selectedCounterPart = nil
+                draggedCounterPart = nil
+            }
             
             // Switch tool to Select
             if currentTool != .select {
@@ -496,6 +587,31 @@ class AnnotationOverlayView: NSView {
         // Handle Text Creation (Only if NOT clicking on existing annotation)
         if currentTool == .text {
             startTextEditing(at: p)
+            return
+        }
+        
+        // Handle Counter Creation
+        if currentTool == .counter {
+            let c = CounterAnnotation(number: nextCounterValue, badgeCenter: p, labelOrigin: nil, text: nil, color: currentColor, lineWidth: currentLineWidth)
+            annotations.append(c)
+            nextCounterValue += 1
+            selectedAnnotationID = c.id
+            
+            // Start text editing immediately
+            // Initial placement offset (ABOVE badge center)
+            let origin = CGPoint(x: c.badgeCenter.x, y: c.badgeCenter.y + c.badgeRadius + 5)
+            
+            // Sync properties to global state so editor uses correct style (defaults)
+            self.currentFontName = c.fontName
+            self.currentIsBold = c.isBold
+            self.currentOutlineStyle = c.outlineStyle
+            self.currentOutlineColor = c.outlineColor
+            
+            startTextEditing(at: origin, existingText: nil, existingAnnotID: c.id, isCounter: true)
+            // Ensure label is selected after creation
+            selectedCounterPart = .label
+            
+            needsDisplay = true
             return
         }
         
@@ -573,7 +689,26 @@ class AnnotationOverlayView: NSView {
         } else if dragAction == .moving {
             guard let start = dragStartPoint, let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) else { return }
             let delta = CGPoint(x: p.x - start.x, y: p.y - start.y)
-            annotations[index] = annotations[index].move(by: delta)
+            
+            var annot = annotations[index]
+            
+            if var counter = annot as? CounterAnnotation, let part = draggedCounterPart {
+                if part == .label {
+                    // Move label only
+                    if let origin = counter.labelOrigin {
+                         counter.labelOrigin = CGPoint(x: origin.x + delta.x, y: origin.y + delta.y)
+                         annot = counter
+                    }
+                } else {
+                    // Move Badge Only (independent move)
+                    counter.badgeCenter = CGPoint(x: counter.badgeCenter.x + delta.x, y: counter.badgeCenter.y + delta.y)
+                    annot = counter
+                }
+            } else {
+                annot = annot.move(by: delta)
+            }
+            
+            annotations[index] = annot
             dragStartPoint = p // Reset start point for incremental move
             needsDisplay = true
         } else if case .resizing(let handle) = dragAction {
@@ -582,7 +717,25 @@ class AnnotationOverlayView: NSView {
             var annot = annotations[index]
             let isShift = event.modifierFlags.contains(.shift)
             
-            if var rectAnnot = annot as? RectangleAnnotation {
+            if var counter = annot as? CounterAnnotation {
+                 // Counter Independent Resizing Logic
+                 if selectedCounterPart == .badge {
+                      let oldBounds = counter.badgeRect
+                      let newBounds = resizeRect(oldBounds, handle: handle, to: p, maintainAspectRatio: true)
+                      let newRadius = newBounds.width / 2.0
+                      // Update size (lineWidth) and position (badgeCenter)
+                      // Radius = lineWidth * 0.6 + 4.0  => lineWidth = (Radius - 4.0) / 0.6
+                      counter.lineWidth = max(10.0, min(100.0, (newRadius - 4.0) / 0.6))
+                      counter.badgeCenter = CGPoint(x: newBounds.midX, y: newBounds.midY)
+                 } else if selectedCounterPart == .label, let oldLabelRect = counter.labelRect {
+                      let newBounds = resizeRect(oldLabelRect, handle: handle, to: p, maintainAspectRatio: true)
+                      let scale = newBounds.height / max(1.0, oldLabelRect.height)
+                      // Update size (lineWidth) and position (labelOrigin)
+                      counter.lineWidth = max(10.0, min(100.0, counter.lineWidth * scale))
+                      counter.labelOrigin = newBounds.origin
+                 }
+                 annot = counter
+            } else if var rectAnnot = annot as? RectangleAnnotation {
                 rectAnnot.rect = resizeRect(rectAnnot.rect, handle: handle, to: p, maintainAspectRatio: isShift)
                 annot = rectAnnot
             } else if var ellAnnot = annot as? EllipseAnnotation {
@@ -743,8 +896,10 @@ class AnnotationOverlayView: NSView {
     
     // MARK: - Text Editing
     
-    private func startTextEditing(at point: CGPoint, existingText: String? = nil, existingAnnotID: UUID? = nil) {
+    private func startTextEditing(at point: CGPoint, existingText: String? = nil, existingAnnotID: UUID? = nil, isCounter: Bool = false) {
         // ... (existing configuration code) ...
+        
+        editingAnnotationID = existingAnnotID
         
         let initialWidth: CGFloat = existingText == nil ? 50 : 200 // Will resize anyway
         
@@ -788,7 +943,7 @@ class AnnotationOverlayView: NSView {
         
         if let text = existingText {
             textView.string = text
-            if let id = existingAnnotID {
+            if let id = existingAnnotID, !isCounter {
                 annotations.removeAll(where: { $0.id == id })
                 needsDisplay = true
             }
@@ -830,48 +985,78 @@ class AnnotationOverlayView: NSView {
     private func endTextEditing() {
         guard let textView = activeTextView else { return }
         
+        // Use snapshot state if available, otherwise fallback to current config
+        let isBold = currentEditingState?.isBold ?? currentIsBold
+        let outlineStyle = currentEditingState?.outlineStyle ?? currentOutlineStyle
+        let outlineColor = currentEditingState?.outlineColor ?? currentOutlineColor
+        let fontName = currentEditingState?.fontName ?? currentFontName
+        
         if !textView.string.isEmpty {
-            // Calculate font size from actual view font
-            let fontSize = textView.font?.pointSize ?? 14.0
-            
-            // Use snapshot state if available, otherwise fallback to current config (risky but fallback)
-            let isBold = currentEditingState?.isBold ?? currentIsBold
-            let outlineStyle = currentEditingState?.outlineStyle ?? currentOutlineStyle
-            let outlineColor = currentEditingState?.outlineColor ?? currentOutlineColor
-            let fontName = currentEditingState?.fontName ?? currentFontName
-            
-            let annot = TextAnnotation(
-                text: textView.string,
-                origin: textView.frame.origin,
-                color: textView.textColor ?? .black, // Use actual color
-                lineWidth: fontSize, // Use actual font size
-                font: textView.font ?? NSFont.systemFont(ofSize: 14),
-                isBold: isBold,
-                outlineStyle: outlineStyle,
-                outlineColor: outlineColor,
-                fontName: fontName
-            )
-            annotations.append(annot)
-            
-            // Only select the new annotation IF we are NOT in Text Tool mode (e.g. Double Click Edit).
-            // If we are in Text Tool mode, we generally want to be ready to create NEW text, not select the old one.
-            // BUT, if we select it, changing properties will change IT.
-            // Standard drawing app behavior for Text Tool:
-            // - Click to type.
-            // - Click elsewhere to finish and start NEW text.
-            // - The previous text is finalized and Deselected.
-            
-            if currentTool == .text {
-                selectedAnnotationID = nil
+            // Check if we are editing a Counter
+            if let id = editingAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }), var counter = annotations[index] as? CounterAnnotation {
+                // Update Counter
+                counter.text = textView.string
+                counter.labelOrigin = textView.frame.origin
+                
+                // Update properties
+                counter.color = textView.textColor ?? .black
+                counter.fontName = fontName
+                counter.isBold = isBold
+                counter.outlineStyle = outlineStyle
+                counter.outlineColor = outlineColor
+                
+                // If user changed Size Slider while editing, update lineWidth
+                counter.lineWidth = currentLineWidth
+                
+                annotations[index] = counter
+                // Keep selected
+                selectedAnnotationID = counter.id
+                selectedCounterPart = .label // Keep label selected after editing
             } else {
-                selectedAnnotationID = annot.id
+                // Standard Text Annotation Creation/Update
+                // Calculate font size from actual view font
+                let fontSize = textView.font?.pointSize ?? 14.0
+                
+                let annot = TextAnnotation(
+                    text: textView.string,
+                    origin: textView.frame.origin,
+                    color: textView.textColor ?? .black, // Use actual color
+                    lineWidth: fontSize, // Use actual font size
+                    font: textView.font ?? NSFont.systemFont(ofSize: 14),
+                    isBold: isBold,
+                    outlineStyle: outlineStyle,
+                    outlineColor: outlineColor,
+                    fontName: fontName
+                )
+                annotations.append(annot)
+                
+                // Only select the new annotation IF we are NOT in Text Tool mode (e.g. Double Click Edit).
+                if currentTool == .text {
+                    selectedAnnotationID = nil
+                } else {
+                    selectedAnnotationID = annot.id
+                }
             }
+        } else {
+             // Empty string
+             // If Counter, delete text part (set to nil).
+             if let id = editingAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }), var counter = annotations[index] as? CounterAnnotation {
+                 counter.text = nil
+                 counter.labelOrigin = nil
+                 annotations[index] = counter
+             }
         }
         
         textView.removeFromSuperview()
         activeTextView = nil
+        editingAnnotationID = nil
         currentEditingState = nil
         needsDisplay = true
+        
+        // Restore focus to SelectionView to ensure hotkeys work
+        if let selectionView = self.superview {
+            self.window?.makeFirstResponder(selectionView)
+        }
     }
 }
 

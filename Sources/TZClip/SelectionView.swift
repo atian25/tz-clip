@@ -641,6 +641,9 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         
         if (event.keyCode == 51 || event.keyCode == 117) { // Delete or Backspace
             annotationOverlay?.deleteSelected()
+            
+            // If toolbar was showing properties for the deleted item, hide them
+            // deleteSelected will trigger onSelectionChange(nil) which handles hiding properties
             return
         }
         

@@ -8,6 +8,7 @@ enum AnnotationType {
     case line
     case pen
     case text
+    case counter
 }
 
 protocol Annotation {
@@ -20,6 +21,229 @@ protocol Annotation {
     func draw(in context: CGContext)
     func contains(point: CGPoint) -> Bool
     func move(by translation: CGPoint) -> Annotation
+}
+
+struct CounterAnnotation: Annotation {
+    let id: UUID = UUID()
+    let type: AnnotationType = .counter
+    var number: Int
+    var badgeCenter: CGPoint
+    var labelOrigin: CGPoint? // If nil, no label is shown
+    var text: String?
+    
+    var color: NSColor
+    var lineWidth: CGFloat // Now used as Font Size (similar to TextAnnotation)
+    
+    // Label properties
+    var fontName: String = "System Default"
+    var isBold: Bool = false
+    var outlineStyle: Int = 0
+    var outlineColor: NSColor = .black
+    
+    var bounds: CGRect {
+        let badgeRect = self.badgeRect
+        if let labelRect = self.labelRect {
+            return badgeRect.union(labelRect)
+        }
+        return badgeRect
+    }
+    
+    var badgeRadius: CGFloat {
+        // Radius based on font size (lineWidth).
+        // Example: Size 18 -> Radius ~14.8 (Diameter ~30)
+        return max(10.0, lineWidth * 0.6 + 4.0)
+    }
+    
+    var badgeRect: CGRect {
+        let r = badgeRadius
+        return CGRect(x: badgeCenter.x - r, y: badgeCenter.y - r, width: r * 2, height: r * 2)
+    }
+    
+    var labelRect: CGRect? {
+        guard let origin = labelOrigin, let text = text, !text.isEmpty else { return nil }
+        
+        let font = effectiveFont
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let size = (text as NSString).size(withAttributes: attributes)
+        // origin is bottom-left of text
+        return CGRect(origin: origin, size: size)
+    }
+    
+    var effectiveFont: NSFont {
+        // Use lineWidth directly as font size (matching TextAnnotation behavior)
+        let size = max(10.0, min(100.0, lineWidth))
+        
+        var baseFont: NSFont
+        if fontName == "System Default" {
+            baseFont = NSFont.systemFont(ofSize: size)
+        } else {
+            baseFont = NSFont(name: fontName, size: size) ?? NSFont.systemFont(ofSize: size)
+        }
+        
+        var newFont = NSFontManager.shared.convert(baseFont, toSize: size)
+        if isBold {
+            newFont = NSFontManager.shared.convert(newFont, toHaveTrait: .boldFontMask)
+        } else {
+            newFont = NSFontManager.shared.convert(newFont, toNotHaveTrait: .boldFontMask)
+        }
+        return newFont
+    }
+    
+    func draw(in context: CGContext) {
+        context.saveGState()
+        
+        // 1. Draw Connector Line if Label exists
+        if let labelRect = labelRect {
+            let labelCenter = CGPoint(x: labelRect.midX, y: labelRect.midY)
+            let dx = labelCenter.x - badgeCenter.x
+            let dy = labelCenter.y - badgeCenter.y
+            
+            var targetPoint = labelCenter
+            
+            // Calculate intersection with label rectangle
+            // The line goes from badgeCenter to labelCenter.
+            // We need to find where this line intersects the labelRect edges.
+            
+            // Equation of line: P = badgeCenter + t * (labelCenter - badgeCenter)
+            // We want to find t such that P is on the boundary of labelRect.
+            // labelRect bounds: x in [minX, maxX], y in [minY, maxY]
+            
+            let halfW = labelRect.width / 2.0
+            let halfH = labelRect.height / 2.0
+            
+            // Avoid division by zero
+            if halfW > 0 && halfH > 0 {
+                // Calculate t for X edges
+                // if dx > 0, intersection is at maxX (right edge), t = (maxX - badgeX) / dx
+                // BUT easier: intersect line from center (0,0 relative) to (dx, dy) with rectangle [-w/2, -h/2] to [w/2, h/2]
+                
+                // Slope m = dy / dx
+                // Intersect vertical edges x = +/- halfW: y = m * (+/- halfW)
+                // If |y| <= halfH, then it hits the vertical edge.
+                
+                let slope = abs(dy / dx)
+                if slope * halfW <= halfH {
+                    // Hits vertical edge (Left or Right)
+                    targetPoint.x = dx > 0 ? labelRect.maxX : labelRect.minX
+                    targetPoint.y = labelCenter.y - (dx > 0 ? 1 : -1) * (labelCenter.x - targetPoint.x) * (dy/dx)
+                    // Simplify: y = badgeY + (targetX - badgeX) * slope_original
+                    // Let's just project.
+                    
+                    // Re-calc using ratios to be safe and smooth
+                    // Vector V = (dx, dy).
+                    // Scale factor to reach edge:
+                    // tx = (halfW) / abs(dx)
+                    // ty = (halfH) / abs(dy)
+                    // t = min(tx, ty)
+                    
+                    let tx = halfW / abs(dx)
+                    let ty = halfH / abs(dy)
+                    let t = min(tx, ty)
+                    
+                    targetPoint.x = labelCenter.x - dx * t
+                    targetPoint.y = labelCenter.y - dy * t
+                    
+                    // Actually we want the point on the rect closest to badgeCenter? 
+                    // No, we want the intersection of the segment (BadgeCenter -> LabelCenter) with LabelRect.
+                    // Vector from LabelCenter to BadgeCenter is (-dx, -dy).
+                    // We start at LabelCenter and move towards BadgeCenter until we hit the edge.
+                    // Ray: R(t) = LabelCenter + t * (-dx, -dy)
+                    // We want min positive t such that R(t) is on boundary.
+                    // Boundaries: |x - cx| = halfW OR |y - cy| = halfH
+                    // |t * (-dx)| = halfW  => t_x = halfW / abs(dx)
+                    // |t * (-dy)| = halfH  => t_y = halfH / abs(dy)
+                    // t = min(t_x, t_y)
+                    
+                    // targetPoint = LabelCenter + t * (-dx, -dy)
+                    //             = LabelCenter - t * (dx, dy)
+                    
+                    targetPoint = CGPoint(
+                        x: labelCenter.x - t * dx,
+                        y: labelCenter.y - t * dy
+                    )
+                } else {
+                    // Fallback to previous logic if calc fails, but the above covers all angles smoothly
+                    let tx = halfW / abs(dx)
+                    let ty = halfH / abs(dy)
+                    let t = min(tx, ty)
+                    targetPoint = CGPoint(
+                        x: labelCenter.x - t * dx,
+                        y: labelCenter.y - t * dy
+                    )
+                }
+            }
+            
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(2.0)
+            context.move(to: badgeCenter)
+            context.addLine(to: targetPoint)
+            context.strokePath()
+        }
+        
+        // 2. Draw Badge
+        let r = badgeRadius
+        let rect = badgeRect
+        
+        context.setFillColor(color.cgColor)
+        context.fillEllipse(in: rect)
+        
+        // White border for badge
+        context.setStrokeColor(NSColor.white.cgColor)
+        context.setLineWidth(2.0)
+        context.strokeEllipse(in: rect)
+        
+        // Draw Number
+        let numStr = "\(number)" as NSString
+        let numFontSize = r * 1.2
+        let numFont = NSFont.boldSystemFont(ofSize: numFontSize)
+        let numAttrs: [NSAttributedString.Key: Any] = [
+            .font: numFont,
+            .foregroundColor: NSColor.white
+        ]
+        let numSize = numStr.size(withAttributes: numAttrs)
+        let numOrigin = CGPoint(
+            x: badgeCenter.x - numSize.width / 2,
+            y: badgeCenter.y - numSize.height / 2 + numSize.height * 0.1
+        )
+        
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.current = nsContext
+        numStr.draw(at: numOrigin, withAttributes: numAttrs)
+        
+        // 3. Draw Label
+        if let text = text, let labelOrigin = labelOrigin {
+             var attributes: [NSAttributedString.Key: Any] = [
+                .font: effectiveFont,
+                .foregroundColor: color
+            ]
+            
+            if outlineStyle > 0 {
+                let width: CGFloat = (outlineStyle == 1) ? -2.0 : -4.0
+                attributes[.strokeWidth] = width
+                attributes[.strokeColor] = outlineColor
+            }
+            
+            (text as NSString).draw(at: labelOrigin, withAttributes: attributes)
+        }
+        
+        context.restoreGState()
+    }
+    
+    func contains(point: CGPoint) -> Bool {
+        if badgeRect.contains(point) { return true }
+        if let labelRect = labelRect, labelRect.contains(point) { return true }
+        return false
+    }
+    
+    func move(by translation: CGPoint) -> Annotation {
+        var new = self
+        new.badgeCenter.x += translation.x
+        new.badgeCenter.y += translation.y
+        if let origin = labelOrigin {
+            new.labelOrigin = CGPoint(x: origin.x + translation.x, y: origin.y + translation.y)
+        }
+        return new
+    }
 }
 
 struct RectangleAnnotation: Annotation {

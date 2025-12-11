@@ -27,7 +27,7 @@ Status: Implemented
     5.  **画笔 (Pen)**: 自由手绘路径。
     6.  **文字 (Text)**: 插入文本标签。
     7.  **马赛克 (Mosaic)**: 区域模糊/像素化 (TODO)。
-    8.  **序号 (Counter)**: 自动递增的圆形数字标记 (①, ②, ③...) (TODO)。
+    8.  **序号 (Counter)**: 组合标注工具，包含一个自动递增的圆形数字标记 (Badge) 和一个可选的文本说明 (Label)，两者之间通过连线连接。
 
 *   **交互优化**:
     *   移除独立的“选择”工具按钮。
@@ -85,12 +85,22 @@ Status: Implemented
         *   **输入**: 支持实时预览（所见即所得），自动横向扩展宽度。
         *   **结束**: 点击画布空白处或按下 `Cmd+Enter` 完成输入。
         *   **独立性**: 连续输入多段文字时，每段文字属性独立，互不干扰。
+    *   **序号工具 (Counter)**:
+        *   **点击**: 在点击位置生成一个新的序号标记 (Badge)，序号自动递增 (1, 2, 3...)。
+        *   **默认状态**: 仅显示序号 Badge，不自动进入文本编辑模式。
+        *   **添加说明**: 用户可以通过双击序号 Badge 或相关联的操作来激活文本输入，生成与 Badge 连接的 Label。
 *   **选择与编辑 (Selecting & Editing)**:
     *   点击已有图形自动进入选择模式。
     *   **文字编辑**:
         *   **双击**: 进入文字编辑模式。
         *   **状态隔离**: 编辑时创建独立的状态快照，确保全局工具配置不影响当前正在编辑的文字。
         *   **所见即所得**: 编辑框样式（字体、大小、颜色、描边）与原文字完全一致。
+    *   **序号编辑**:
+        *   **拖拽移动**:
+            *   **整体移动**: 拖拽 Badge 或 Label 的非连接点区域，两者保持相对位置一起移动。
+            *   **独立移动**: 选中后，可以分别拖拽 Badge 或 Label，两者之间会自动绘制一条连接线 (Connector Line)。
+        *   **文本编辑**: 双击 Label 部分（如果存在）或双击 Badge 触发添加/编辑 Label，交互与普通文字工具一致。
+        *   **递增逻辑**: 删除中间某个序号后，后续序号自动重新排序 (Reflow) 或保持不变 (取决于实现复杂度，建议 MVP 保持不变，手动调整)。
     *   **移动**: 拖动图形主体。
     *   **缩放**: 拖动图形周围的 8 个控制点 (Handles)。`Shift` 键保持比例。
     *   **删除**: 选中后按 `Delete` / `Backspace`。
@@ -118,6 +128,7 @@ SelectionView (NSView)
     *   `selectedAnnotationID: UUID?`
     *   `dragAction: DragAction` (creating, moving, resizing)
     *   `currentEditingState`: 用于保存文字编辑时的临时状态快照。
+    *   `nextCounterValue: Int`: 记录下一个序号的值，每次使用 Counter 工具重置或递增。
 *   **方法**:
     *   `draw(_:)`: 遍历 `annotations` 调用其 `draw(in:)` 方法。
     *   `mouseDown/dragged/Up`: 处理绘制和编辑手势。
@@ -130,6 +141,20 @@ SelectionView (NSView)
     *   `contains(point: CGPoint) -> Bool`
     *   `move(by translation: CGPoint) -> Annotation`
 *   **实现**: `RectangleAnnotation`, `EllipseAnnotation`, `LineAnnotation`, `TextAnnotation` (增强: `outlineStyle`, `outlineColor`, `fontName`), `CounterAnnotation` 等。
+
+#### `CounterAnnotation` (New)
+*   **属性**:
+    *   `number: Int`: 序号值。
+    *   `badgeCenter: CGPoint`: 序号圆圈中心点。
+    *   `labelOrigin: CGPoint?`: 文本说明的位置 (可选)。
+    *   `text: String?`: 文本内容。
+    *   `attributes`: 颜色、字体等通用属性。
+*   **绘制逻辑**:
+    *   绘制圆形 Badge 背景和数字。
+    *   如果有 `labelOrigin` 和 `text`，绘制连接线 (Badge Center -> Label Center) 和文本 Label。
+*   **交互逻辑**:
+    *   `hitTest` 需要分别判断命中 Badge 还是 Label。
+    *   `move` 根据命中部分决定是整体移动还是独立移动。
 
 #### `AnnotationToolbar` & `PropertiesView`
 *   纯 UI 组件，通过 `Delegate` 或 `Closure` 与 `SelectionView` 通信。
@@ -156,7 +181,10 @@ SelectionView (NSView)
     - [x] 增加**粗细滑块**支持。
     - [x] 增加**高级样式**支持（实心填充、圆角、自定义颜色）。
 - [ ] **Step 6: 高级标注工具 (Phase 2)**
-    - [ ] 实现**序号 (Counter)** 工具。
+    - [ ] **序号 (Counter) 工具实现**:
+        - [ ] 数据模型 `CounterAnnotation` (Badge + Label + Link)。
+        - [ ] 交互逻辑：点击生成、拖拽分离、双击编辑文本。
+        - [ ] 自动递增逻辑管理。
     - [ ] 实现**马赛克 (Mosaic)** 工具。
 - [x] **Step 7: 文字工具完善 (Enhanced)**
     - [x] 集成 `NSTextView` 进行文本输入。

@@ -88,7 +88,8 @@ class AnnotationToolbar: NSView {
             ("╱", .line),
             ("↗", .arrow),
             ("✎", .pen),
-            ("T", .text)
+            ("T", .text),
+            ("➊", .counter)
         ]
         
         let actions: [(String, ToolbarAction)] = [
@@ -161,6 +162,7 @@ class AnnotationToolbar: NSView {
         case .arrow: return 104
         case .pen: return 105
         case .text: return 106
+        case .counter: return 107
         }
     }
     
@@ -196,6 +198,7 @@ class AnnotationToolbar: NSView {
         case 104: type = .arrow
         case 105: type = .pen
         case 106: type = .text
+        case 107: type = .counter
         default: break
         }
         

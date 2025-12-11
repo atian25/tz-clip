@@ -379,8 +379,9 @@ class AnnotationPropertiesView: NSView {
             sizeValueLabel?.stringValue = "\(Int(selectedWidth))px"
         }
         
-        // Toggle Bold Button (Text only)
-        boldButton?.isHidden = (type != .text)
+        // Toggle Bold Button (Text or Counter)
+        let isTextOrCounter = (type == .text || type == .counter)
+        boldButton?.isHidden = !isTextOrCounter
         
         // Toggle Checkboxes (Rectangle/Ellipse)
         let isShape = (type == .rectangle || type == .ellipse)
@@ -389,27 +390,14 @@ class AnnotationPropertiesView: NSView {
         // Rounded only for Rectangle
         roundedCheckbox?.isHidden = (type != .rectangle)
         
-        // Text Specific Controls
-        let isText = (type == .text)
-        outlineStylePopup?.isHidden = !isText
-        outlineColorWell?.isHidden = !isText
-        fontPopup?.isHidden = !isText
+        // Text/Counter Specific Controls
+        outlineStylePopup?.isHidden = !isTextOrCounter
+        outlineColorWell?.isHidden = !isTextOrCounter
+        fontPopup?.isHidden = !isTextOrCounter
         
-        // If Text, Bold button is visible. But we might want to move it or keep it?
-        // In my new layout, Outline/Font occupy the checkbox area.
-        // Bold button was at (checkStartX, row1Y).
-        // OutlinePopup is also at (checkStartX, row1Y).
-        // We need to shift Bold Button if Text.
-        if isText {
-            // Re-layout for Text Mode
+        if isTextOrCounter {
+            // Re-layout for Text/Counter Mode
             // Top Row: Outline Popup (44) + Outline Color (16) + Spacing (4) = 64
-            // Bold Button was at checkStartX.
-            // Let's place Bold Button to the RIGHT of Outline Color? Or maybe before?
-            // User screenshot:
-            // Top: "无" (Popup) | [Color]
-            // Bottom: "系统默认" (Popup)
-            // Where is Bold? Maybe user didn't show it or it's toggleable elsewhere?
-            // But we have a Bold button. Let's put it next to Font Popup?
             
             // Adjust Outline Popup width
             outlineStylePopup?.frame.size.width = 44
@@ -419,18 +407,10 @@ class AnnotationPropertiesView: NSView {
             outlineColorWell?.frame.origin = CGPoint(x: checkStartX + 48, y: row1Y)
             
             // Font Popup (Bottom Row)
-            // Make it slightly narrower to fit Bold button if needed
             fontPopup?.frame.size.width = 64 // Full width
             fontPopup?.frame.origin = CGPoint(x: checkStartX, y: row2Y)
             
             // Bold Button
-            // If we put it next to Font Popup, we need more width.
-            // Current Right Section Width is 60. 64 is already tight.
-            // Let's increase view width dynamically? Or just squeeze.
-            // Let's place Bold button as an overlay or to the left of Right Section (in the padding area)?
-            // The padding between Middle and Right is 10px.
-            // We can put Bold button at `checkStartX - 24`.
-            
             boldButton?.frame.origin = CGPoint(x: checkStartX - 24, y: row2Y)
             boldButton?.isHidden = false
         } else {
