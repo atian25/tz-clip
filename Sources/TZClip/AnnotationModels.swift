@@ -28,8 +28,9 @@ struct CounterAnnotation: Annotation {
     let type: AnnotationType = .counter
     var number: Int
     var badgeCenter: CGPoint
-    var labelOrigin: CGPoint? // If nil, no label is shown
+    var labelOrigin: CGPoint?
     var text: String?
+    var label: TextAnnotation? = nil
     
     var color: NSColor
     var lineWidth: CGFloat // Now used as Font Size (similar to TextAnnotation)
@@ -39,12 +40,12 @@ struct CounterAnnotation: Annotation {
     var isBold: Bool = false
     var outlineStyle: Int = 0
     var outlineColor: NSColor = .black
+    var backgroundColor: NSColor? = nil
     
     var bounds: CGRect {
         let badgeRect = self.badgeRect
-        if let labelRect = self.labelRect {
-            return badgeRect.union(labelRect)
-        }
+        if let l = label { return badgeRect.union(l.bounds) }
+        if let labelRect = self.labelRect { return badgeRect.union(labelRect) }
         return badgeRect
     }
     
@@ -78,21 +79,11 @@ struct CounterAnnotation: Annotation {
     }
     
     var labelRect: CGRect? {
+        if let l = label { return l.bounds }
         guard let origin = labelOrigin, let text = text, !text.isEmpty else { return nil }
-        
         let font = effectiveFont
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
         let size = (text as NSString).size(withAttributes: attributes)
-        // origin is bottom-left of text
-        // User requested: "When scaling, it should move towards Top-Right".
-        // This implies the origin should be the BOTTOM-LEFT.
-        // Standard macOS drawing: origin IS bottom-left in flipped coordinates? 
-        // Wait, NSView isFlipped = false by default (Origin Bottom-Left).
-        // Text drawing: `draw(at: origin)` usually draws starting from that point upwards or downwards depending on context.
-        // NSString.draw(at:) in non-flipped context draws above the point? No, usually baseline is at point.
-        // Actually, NSString.draw(in: rect) is safer.
-        // If we use origin as Bottom-Left, then rect is (x, y, w, h).
-        
         return CGRect(origin: origin, size: size)
     }
     
@@ -239,20 +230,21 @@ struct CounterAnnotation: Annotation {
         NSGraphicsContext.current = nsContext
         numStr.draw(at: numOrigin, withAttributes: numAttrs)
         
-        // 3. Draw Label
-        if let text = text, let labelOrigin = labelOrigin {
-             var attributes: [NSAttributedString.Key: Any] = [
-                .font: effectiveFont,
-                .foregroundColor: color
-            ]
-            
-            if outlineStyle > 0 {
-                let width: CGFloat = (outlineStyle == 1) ? -2.0 : -4.0
-                attributes[.strokeWidth] = width
-                attributes[.strokeColor] = outlineColor
-            }
-            
-            (text as NSString).draw(at: labelOrigin, withAttributes: attributes)
+        // 3. Draw Label：直接复用 TextAnnotation 渲染，行为与文字标注完全一致
+        if let text = text, let origin = labelOrigin {
+            let ta = TextAnnotation(
+                text: text,
+                origin: origin,
+                color: color,
+                lineWidth: lineWidth,
+                font: effectiveFont,
+                isBold: isBold,
+                outlineStyle: outlineStyle,
+                outlineColor: outlineColor,
+                fontName: fontName,
+                backgroundColor: backgroundColor
+            )
+            ta.draw(in: context)
         }
         
         context.restoreGState()

@@ -169,6 +169,10 @@ class AnnotationOverlayView: NSView {
                     textAnnot.isBold = newValue
                     annotations[index] = textAnnot
                     needsDisplay = true
+                } else if var counter = annotations[index] as? CounterAnnotation {
+                    if var l = counter.label { l.isBold = newValue; counter.label = l } else { counter.isBold = newValue }
+                    annotations[index] = counter
+                    needsDisplay = true
                 }
             }
             updateActiveTextView()
@@ -216,6 +220,10 @@ class AnnotationOverlayView: NSView {
                     textAnnot.outlineStyle = newValue
                     annotations[index] = textAnnot
                     needsDisplay = true
+                } else if var counter = annotations[index] as? CounterAnnotation {
+                    if var l = counter.label { l.outlineStyle = newValue; counter.label = l } else { counter.outlineStyle = newValue }
+                    annotations[index] = counter
+                    needsDisplay = true
                 }
             }
         }
@@ -230,6 +238,10 @@ class AnnotationOverlayView: NSView {
                     textAnnot.outlineColor = newValue
                     annotations[index] = textAnnot
                     needsDisplay = true
+                } else if var counter = annotations[index] as? CounterAnnotation {
+                    if var l = counter.label { l.outlineColor = newValue; counter.label = l } else { counter.outlineColor = newValue }
+                    annotations[index] = counter
+                    needsDisplay = true
                 }
             }
         }
@@ -243,6 +255,10 @@ class AnnotationOverlayView: NSView {
                 if var textAnnot = annotations[index] as? TextAnnotation {
                     textAnnot.fontName = newValue
                     annotations[index] = textAnnot
+                    needsDisplay = true
+                } else if var counter = annotations[index] as? CounterAnnotation {
+                    if var l = counter.label { l.fontName = newValue; counter.label = l } else { counter.fontName = newValue }
+                    annotations[index] = counter
                     needsDisplay = true
                 }
             }
@@ -261,6 +277,10 @@ class AnnotationOverlayView: NSView {
                 if var textAnnot = annotations[index] as? TextAnnotation {
                     textAnnot.backgroundColor = newValue
                     annotations[index] = textAnnot
+                    needsDisplay = true
+                } else if var counterAnnot = annotations[index] as? CounterAnnotation {
+                    counterAnnot.backgroundColor = newValue
+                    annotations[index] = counterAnnot
                     needsDisplay = true
                 }
             }
@@ -561,22 +581,21 @@ class AnnotationOverlayView: NSView {
                      
                      startTextEditing(at: textAnnot.origin, existingText: textAnnot.text, existingAnnotID: textAnnot.id)
                      return
-                 } else if let counterAnnot = annot as? CounterAnnotation {
+                } else if let counterAnnot = annot as? CounterAnnotation {
                      // Counter Logic
                      selectedAnnotationID = nil
                      self.currentColor = counterAnnot.color
                      self.currentLineWidth = counterAnnot.lineWidth
                      
-                     // Use existing label origin or default to ABOVE badge
-                     let origin = counterAnnot.labelOrigin ?? CGPoint(x: counterAnnot.badgeCenter.x, y: counterAnnot.badgeCenter.y + counterAnnot.badgeRadius + 5)
+                     let origin = counterAnnot.label?.origin ?? counterAnnot.labelOrigin ?? CGPoint(x: counterAnnot.badgeCenter.x, y: counterAnnot.badgeCenter.y + counterAnnot.badgeRadius + 5)
                      
-                     // Prepare text properties
-                     self.currentFontName = counterAnnot.fontName
-                     self.currentIsBold = counterAnnot.isBold
-                     self.currentOutlineStyle = counterAnnot.outlineStyle
-                     self.currentOutlineColor = counterAnnot.outlineColor
+                     self.currentFontName = counterAnnot.label?.fontName ?? counterAnnot.fontName
+                     self.currentIsBold = counterAnnot.label?.isBold ?? counterAnnot.isBold
+                     self.currentOutlineStyle = counterAnnot.label?.outlineStyle ?? counterAnnot.outlineStyle
+                     self.currentOutlineColor = counterAnnot.label?.outlineColor ?? counterAnnot.outlineColor
+                     self.currentTextBackgroundColor = counterAnnot.label?.backgroundColor ?? counterAnnot.backgroundColor
                      
-                     startTextEditing(at: origin, existingText: counterAnnot.text, existingAnnotID: counterAnnot.id, isCounter: true)
+                     startTextEditing(at: origin, existingText: counterAnnot.label?.text ?? counterAnnot.text, existingAnnotID: counterAnnot.id, isCounter: true)
                      return
                  }
              }
@@ -692,7 +711,13 @@ class AnnotationOverlayView: NSView {
         
         // Handle Counter Creation
         if currentTool == .counter {
-            let c = CounterAnnotation(number: nextCounterValue, badgeCenter: p, labelOrigin: nil, text: nil, color: currentColor, lineWidth: currentLineWidth)
+            var c = CounterAnnotation(number: nextCounterValue, badgeCenter: p, labelOrigin: nil, text: nil, color: currentColor, lineWidth: currentLineWidth)
+            // 继承当前工具的文字样式配置作为默认
+            c.fontName = currentFontName
+            c.isBold = currentIsBold
+            c.outlineStyle = currentOutlineStyle
+            c.outlineColor = currentOutlineColor
+            c.backgroundColor = currentConfig.textBackgroundColor
             annotations.append(c)
             nextCounterValue += 1
             selectedAnnotationID = c.id
@@ -701,11 +726,12 @@ class AnnotationOverlayView: NSView {
             // Initial placement offset (ABOVE badge center)
             let origin = CGPoint(x: c.badgeCenter.x, y: c.badgeCenter.y + c.badgeRadius + 5)
             
-            // Sync properties to global state so editor uses correct style (defaults)
+            // Sync properties到编辑态（与当前工具配置一致）
             self.currentFontName = c.fontName
             self.currentIsBold = c.isBold
             self.currentOutlineStyle = c.outlineStyle
             self.currentOutlineColor = c.outlineColor
+            self.currentTextBackgroundColor = c.backgroundColor
             
             startTextEditing(at: origin, existingText: nil, existingAnnotID: c.id, isCounter: true)
             // Ensure label is selected after creation
@@ -1135,6 +1161,7 @@ class AnnotationOverlayView: NSView {
                 counter.isBold = isBold
                 counter.outlineStyle = outlineStyle
                 counter.outlineColor = outlineColor
+                counter.backgroundColor = currentConfig.textBackgroundColor
                 
                 // If user changed Size Slider while editing, update lineWidth
                 counter.lineWidth = currentLineWidth

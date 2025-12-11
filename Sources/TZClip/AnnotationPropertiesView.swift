@@ -375,7 +375,7 @@ class AnnotationPropertiesView: NSView {
         // Toggle Bold Button (Text or Counter)
         let isTextOrCounter = (type == .text || type == .counter)
         boldButton?.isHidden = !isTextOrCounter
-        backgroundPopup?.isHidden = !isTextOrCounter || (type == .counter)
+        backgroundPopup?.isHidden = !isTextOrCounter
         
         // Toggle Checkboxes (Rectangle/Ellipse)
         let isShape = (type == .rectangle || type == .ellipse)

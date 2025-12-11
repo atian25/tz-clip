@@ -341,14 +341,14 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         if !selectionRect.isEmpty {
             if let h = handle(at: p) {
                 state = .resizing(h)
-                hideToolbar()
+                propertiesView?.isHidden = true
                 return
             }
             
             if selectionRect.contains(p) {
                 state = .moving
                 NSCursor.closedHand.set()
-                hideToolbar()
+                propertiesView?.isHidden = true
                 return
             }
         } else {
@@ -358,12 +358,18 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
             }
         }
         
-        // Always start creating initially. 
+        // 点击空白区域：若已有选区，默认不清除选区，不做操作；仅在拖拽超过阈值时再进入创建模式
+        if !selectionRect.isEmpty {
+            // 记录起点，等待拖拽判定；保持现有选区与工具栏
+            startPoint = p
+            return
+        }
+        // 无选区时，进入创建模式
         state = .creating
         selectionRect = .zero
-        cursorLocation = nil // Stop showing crosshair
-        highlightWindowRect = nil // Stop showing highlight
-        hideToolbar()
+        cursorLocation = nil
+        highlightWindowRect = nil
+        propertiesView?.isHidden = true
         needsDisplay = true
     }
     
@@ -380,6 +386,16 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 if dragDist > 3.0 {
                     pendingWindowRect = nil
                 }
+            }
+        }
+        
+        // 若点在选区外并拖拽超过阈值，则从已选状态进入创建模式
+        if case .selected = state, let start = startPoint, !selectionRect.contains(start) {
+            let dragDist = hypot(p.x - start.x, p.y - start.y)
+            if dragDist > 3.0 {
+                state = .creating
+                selectionRect = .zero
+                propertiesView?.isHidden = true
             }
         }
         
@@ -417,6 +433,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         if let overlay = annotationOverlay {
             overlay.frame = selectionRect
         }
+        positionToolbar()
     }
     
     override func mouseUp(with event: NSEvent) {
@@ -428,12 +445,12 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 selectionRect = windowRect
                 state = .selected
                 setupAnnotationOverlay()
-                showToolbar()
+                positionToolbar()
                 pendingWindowRect = nil
             } else if selectionRect.width > 10 && selectionRect.height > 10 {
                  state = .selected
                  setupAnnotationOverlay()
-                 showToolbar()
+                 positionToolbar()
              } else {
                  state = .idle
                  selectionRect = .zero
@@ -447,7 +464,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
             } else {
                 setupAnnotationOverlay()
             }
-            showToolbar()
+            positionToolbar()
         }
         
         startPoint = nil
@@ -473,17 +490,25 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 props.selectedColor = annot.color
                 props.selectedWidth = annot.lineWidth
                 if let textAnnot = annot as? TextAnnotation {
-                props.isBold = textAnnot.isBold
-                props.outlineStyle = textAnnot.outlineStyle
-                props.outlineColor = textAnnot.outlineColor
-                props.fontName = textAnnot.fontName
-            }
-            if let rectAnnot = annot as? RectangleAnnotation {
+                    props.isBold = textAnnot.isBold
+                    props.outlineStyle = textAnnot.outlineStyle
+                    props.outlineColor = textAnnot.outlineColor
+                    props.fontName = textAnnot.fontName
+                    props.textBackgroundColor = textAnnot.backgroundColor
+                    self.annotationOverlay?.currentTextBackgroundColor = textAnnot.backgroundColor
+                }
+                if let rectAnnot = annot as? RectangleAnnotation {
                     props.isFilled = rectAnnot.isFilled
                     props.isRounded = rectAnnot.isRounded
                 }
                 if let ellAnnot = annot as? EllipseAnnotation {
                     props.isFilled = ellAnnot.isFilled
+                }
+                if let counterAnnot = annot as? CounterAnnotation {
+                    props.isBold = counterAnnot.isBold
+                    props.fontName = counterAnnot.fontName
+                    props.textBackgroundColor = counterAnnot.backgroundColor
+                    self.annotationOverlay?.currentTextBackgroundColor = counterAnnot.backgroundColor
                 }
                 
                 // Configure View for Type
@@ -494,11 +519,13 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 // Update Layout
                 self.updatePropertiesLayout()
             } else {
-                // If nothing is selected, hide properties to keep screen clean
-                // This applies to all tools (Creation tools included)
-                // User can re-enable properties by selecting an item or re-selecting the tool (if implemented),
-                // but effectively this supports the "Click Away -> Done" workflow.
-                props.isHidden = true
+                // 当无选中项时：对于文本/序号工具，保持属性面板可见，便于连续创建和调整样式
+                if let tool = self.annotationOverlay?.currentTool, (tool == .text || tool == .counter) {
+                    props.isHidden = false
+                    self.updatePropertiesLayout()
+                } else {
+                    props.isHidden = true
+                }
             }
         }
         
@@ -690,7 +717,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 if let overlay = annotationOverlay {
                     overlay.frame = selectionRect
                 }
-                showToolbar() // Update toolbar position
+                positionToolbar()
                 return
             }
         }
@@ -778,6 +805,38 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         propertiesView?.removeFromSuperview()
         propertiesView = nil
     }
+
+    private func positionToolbar() {
+        if toolbarView == nil || propertiesView == nil {
+            // 自动恢复工具栏/属性面板
+            showToolbar()
+        }
+        guard let toolbar = toolbarView, let props = propertiesView else { return }
+        let toolbarSize = toolbar.frame.size
+        let propsSize = props.frame.size
+        let padding: CGFloat = 8
+        var toolbarX = selectionRect.maxX - toolbarSize.width
+        toolbarX = max(padding, toolbarX)
+        toolbarX = min(bounds.width - toolbarSize.width - padding, toolbarX)
+        var toolbarY = selectionRect.minY - padding - toolbarSize.height
+        let spaceBelow = selectionRect.minY
+        let spaceAbove = self.bounds.height - selectionRect.maxY
+        var isToolbarBelow = true
+        if spaceBelow < (toolbarSize.height + padding + propsSize.height + padding) {
+            if spaceAbove > (toolbarSize.height + padding + propsSize.height + padding) {
+                toolbarY = selectionRect.maxY + padding
+                isToolbarBelow = false
+            } else if toolbarY < padding {
+                toolbarY = padding
+                isToolbarBelow = true
+            }
+        }
+        toolbar.frame.origin = NSPoint(x: toolbarX, y: toolbarY)
+        var propsX = toolbarX
+        propsX = min(bounds.width - propsSize.width - padding, max(padding, propsX))
+        let propsY = isToolbarBelow ? (toolbarY - padding - propsSize.height) : (toolbarY + toolbarSize.height + padding)
+        props.frame.origin = NSPoint(x: propsX, y: propsY)
+    }
     
     private func handleCancel() {
         if let overlay = annotationOverlay, !overlay.isHidden {
@@ -817,6 +876,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                 propertiesView?.outlineStyle = overlay.currentOutlineStyle
                 propertiesView?.outlineColor = overlay.currentOutlineColor
                 propertiesView?.fontName = overlay.currentFontName
+                propertiesView?.textBackgroundColor = overlay.currentTextBackgroundColor
             }
         if tool == .rectangle {
                 propertiesView?.isRounded = overlay.currentIsRounded
