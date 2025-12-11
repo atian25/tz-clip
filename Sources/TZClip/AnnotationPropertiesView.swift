@@ -10,6 +10,7 @@ import Cocoa
         func didChangeOutlineStyle(_ style: Int)
         func didChangeOutlineColor(_ color: NSColor)
         func didChangeFontName(_ name: String)
+        func didChangeTextBackgroundColor(_ color: NSColor?)
     }
 
 class ColorButton: NSButton {
@@ -69,6 +70,7 @@ class AnnotationPropertiesView: NSView {
     private var outlineStylePopup: NSPopUpButton?
     private var outlineColorWell: NSColorWell?
     private var fontPopup: NSPopUpButton?
+    private var backgroundPopup: NSPopUpButton?
     
     // State
     private let colors: [NSColor] = [.red, .magenta, .blue, .yellow, .green] // 5 fixed colors + 1 custom
@@ -130,6 +132,12 @@ class AnnotationPropertiesView: NSView {
             }
         }
     }
+
+    var textBackgroundColor: NSColor? = nil {
+        didSet {
+            updateBackgroundPopupSelection()
+        }
+    }
     
     // Internal state to decouple slider from color picking
     private var currentOpacity: CGFloat = 1.0
@@ -162,7 +170,7 @@ class AnnotationPropertiesView: NSView {
         let padding: CGFloat = 8
         let leftSectionWidth: CGFloat = 130 // Size/Opacity
         let middleSectionWidth: CGFloat = 80 // Colors (3 cols)
-        let rightSectionWidth: CGFloat = 64
+        let rightSectionWidth: CGFloat = 128
         let height: CGFloat = 64
         
         self.frame.size = CGSize(width: padding + leftSectionWidth + padding + middleSectionWidth + padding + rightSectionWidth + padding, height: height)
@@ -279,33 +287,39 @@ class AnnotationPropertiesView: NSView {
         // Add slightly more padding after separator
         let checkStartX = sep2.frame.maxX + 10
         
-        // Row 1: Fill
+        // Row 1: Fill (for shapes), Bold (for text), Background (for text)
         let fillCheck = NSButton(checkboxWithTitle: "实心", target: self, action: #selector(fillTapped(_:)))
         fillCheck.frame = CGRect(x: checkStartX, y: row1Y, width: 60, height: 16)
         fillCheck.font = labelFont
         fillCheck.controlSize = .small
         addSubview(fillCheck)
         self.fillCheckbox = fillCheck
-        
-        // Row 2: Rounded
+
+        let boldCheck = NSButton(checkboxWithTitle: "粗体", target: self, action: #selector(boldTapped(_:)))
+        boldCheck.frame = CGRect(x: checkStartX + 64, y: row1Y, width: 48, height: 16)
+        boldCheck.font = labelFont
+        boldCheck.controlSize = .small
+        boldCheck.isHidden = true
+        addSubview(boldCheck)
+        self.boldButton = boldCheck
+
+        let bgPop = NSPopUpButton(frame: CGRect(x: checkStartX + 64 + 56, y: row1Y, width: 64, height: 16), pullsDown: false)
+        bgPop.addItems(withTitles: ["透明", "白", "黑", "黄", "蓝", "红"])
+        bgPop.controlSize = .small
+        bgPop.font = labelFont
+        bgPop.target = self
+        bgPop.action = #selector(backgroundChanged(_:))
+        bgPop.isHidden = true
+        addSubview(bgPop)
+        self.backgroundPopup = bgPop
+
+        // Row 2: Rounded (for rectangle), Font popup (for text)
         let roundCheck = NSButton(checkboxWithTitle: "圆角", target: self, action: #selector(roundedTapped(_:)))
         roundCheck.frame = CGRect(x: checkStartX, y: row2Y, width: 60, height: 16)
         roundCheck.font = labelFont
         roundCheck.controlSize = .small
         addSubview(roundCheck)
         self.roundedCheckbox = roundCheck
-        
-        // Bold Button (For Text Tool) - Initially hidden, maybe overlay on top or replace?
-        // Let's create it but hide it.
-        let boldBtn = NSButton(frame: CGRect(x: checkStartX + 48, y: row2Y, width: 16, height: 16))
-        boldBtn.bezelStyle = .inline
-        boldBtn.image = NSImage(systemSymbolName: "bold", accessibilityDescription: "Bold")
-        boldBtn.controlSize = .small
-        boldBtn.target = self
-        boldBtn.action = #selector(boldTapped(_:))
-        boldBtn.isHidden = true
-        addSubview(boldBtn)
-        self.boldButton = boldBtn
         
         // --- Text Specific Controls (Right Section Overlay) ---
         // Reuse same area as Checkboxes
@@ -336,7 +350,7 @@ class AnnotationPropertiesView: NSView {
         self.outlineColorWell = outlineColor
         
         // Font Popup (Bottom Row)
-        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX, y: row2Y, width: 48, height: 16), pullsDown: false)
+        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX + 64, y: row2Y, width: 112, height: 16), pullsDown: false)
         fontPop.addItem(withTitle: "系统默认")
         // Add some common fonts
         let commonFonts = ["Helvetica", "Arial", "Times New Roman", "Courier New", "Verdana"]
@@ -382,6 +396,7 @@ class AnnotationPropertiesView: NSView {
         // Toggle Bold Button (Text or Counter)
         let isTextOrCounter = (type == .text || type == .counter)
         boldButton?.isHidden = !isTextOrCounter
+        backgroundPopup?.isHidden = !isTextOrCounter || (type == .counter)
         
         // Toggle Checkboxes (Rectangle/Ellipse)
         let isShape = (type == .rectangle || type == .ellipse)
@@ -406,10 +421,13 @@ class AnnotationPropertiesView: NSView {
             // Outline Color
             outlineColorWell?.frame.origin = CGPoint(x: checkStartX + 48, y: row1Y)
             
-            // Font Popup (Bottom Row)
-            fontPopup?.frame.size.width = 48
-            fontPopup?.frame.origin = CGPoint(x: checkStartX, y: row2Y)
-            boldButton?.frame.origin = CGPoint(x: checkStartX + 48, y: row2Y)
+            // Row1 additions for Text: Bold + Background
+            boldButton?.frame.origin = CGPoint(x: checkStartX + 64, y: row1Y)
+            backgroundPopup?.frame.origin = CGPoint(x: checkStartX + 64 + 56, y: row1Y)
+            
+            // Font Popup (Row2)
+            fontPopup?.frame.size.width = 112
+            fontPopup?.frame.origin = CGPoint(x: checkStartX + 64, y: row2Y)
             boldButton?.isHidden = false
         } else {
             // Reset logic for other tools? Bold is hidden anyway.
@@ -472,6 +490,24 @@ class AnnotationPropertiesView: NSView {
         if let item = fontPopup?.item(withTitle: fontName) {
             fontPopup?.select(item)
         }
+        updateBackgroundPopupSelection()
+    }
+
+    private func updateBackgroundPopupSelection() {
+        guard let bgPop = backgroundPopup else { return }
+        let title: String
+        if let c = textBackgroundColor {
+            // Map to titles
+            if areColorsSimilar(c, .white) { title = "白" }
+            else if areColorsSimilar(c, .black) { title = "黑" }
+            else if areColorsSimilar(c, .yellow) { title = "黄" }
+            else if areColorsSimilar(c, .blue) { title = "蓝" }
+            else if areColorsSimilar(c, .red) { title = "红" }
+            else { title = "透明" }
+        } else {
+            title = "透明"
+        }
+        bgPop.selectItem(withTitle: title)
     }
     
     private func areColorsSimilar(_ c1: NSColor, _ c2: NSColor) -> Bool {
@@ -517,6 +553,20 @@ class AnnotationPropertiesView: NSView {
     @objc private func boldTapped(_ sender: NSButton) {
         isBold.toggle()
         delegate?.didChangeIsBold(isBold)
+    }
+
+    @objc private func backgroundChanged(_ sender: NSPopUpButton) {
+        let title = sender.titleOfSelectedItem ?? "透明"
+        switch title {
+        case "白": textBackgroundColor = .white
+        case "黑": textBackgroundColor = .black
+        case "黄": textBackgroundColor = .yellow
+        case "蓝": textBackgroundColor = .blue
+        case "红": textBackgroundColor = .red
+        default:
+            textBackgroundColor = nil
+        }
+        delegate?.didChangeTextBackgroundColor(textBackgroundColor)
     }
 
     @objc private func fillTapped(_ sender: NSButton) {

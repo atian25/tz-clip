@@ -42,6 +42,7 @@ class AnnotationOverlayView: NSView {
         var outlineStyle: Int = 0
         var outlineColor: NSColor = .black
         var fontName: String = "系统默认"
+        var textBackgroundColor: NSColor? = nil
     }
     
     private var toolConfigs: [AnnotationType: ToolConfig] = [:]
@@ -248,6 +249,14 @@ class AnnotationOverlayView: NSView {
             updateActiveTextView()
         }
     }
+
+    var currentTextBackgroundColor: NSColor? {
+        get { currentConfig.textBackgroundColor }
+        set {
+            currentConfig.textBackgroundColor = newValue
+            updateActiveTextView()
+        }
+    }
     
     var onSelectionChange: ((Annotation?) -> Void)?
     
@@ -314,6 +323,13 @@ class AnnotationOverlayView: NSView {
         
         textView.font = font
         textView.textColor = currentColor
+        if let bg = currentConfig.textBackgroundColor {
+            textView.drawsBackground = true
+            textView.backgroundColor = bg.withAlphaComponent(currentColor.alphaComponent)
+        } else {
+            textView.drawsBackground = false
+            textView.backgroundColor = .clear
+        }
         
         // Update Snapshot
         currentEditingState = TextEditingState(

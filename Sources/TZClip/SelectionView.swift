@@ -986,6 +986,10 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
     func didChangeFontName(_ name: String) {
         annotationOverlay?.currentFontName = name
     }
+
+    func didChangeTextBackgroundColor(_ color: NSColor?) {
+        annotationOverlay?.currentTextBackgroundColor = color
+    }
     
     // Helper to update layout
     func updatePropertiesLayout() {
