@@ -1056,8 +1056,13 @@ class AnnotationOverlayView: NSView {
         
         textView.font = font
         textView.textColor = currentColor
-        textView.backgroundColor = .clear
-        textView.drawsBackground = false
+        if let bg = currentConfig.textBackgroundColor {
+            textView.backgroundColor = bg.withAlphaComponent(currentColor.alphaComponent)
+            textView.drawsBackground = true
+        } else {
+            textView.backgroundColor = .clear
+            textView.drawsBackground = false
+        }
         textView.isRichText = false
         textView.delegate = self
         

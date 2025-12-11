@@ -170,7 +170,7 @@ class AnnotationPropertiesView: NSView {
         let padding: CGFloat = 8
         let leftSectionWidth: CGFloat = 140 // Size/Opacity (避免被压缩)
         let middleSectionWidth: CGFloat = 72 // Colors (3 cols)
-        let rightSectionWidth: CGFloat = 112 // 右侧更紧凑，避免越界
+        let rightSectionWidth: CGFloat = 136 // 右侧加宽，避免控件被裁切
         let height: CGFloat = 64
         
         self.frame.size = CGSize(width: padding + leftSectionWidth + padding + middleSectionWidth + padding + rightSectionWidth + padding, height: height)
@@ -295,14 +295,14 @@ class AnnotationPropertiesView: NSView {
         self.fillCheckbox = fillCheck
 
         let boldCheck = NSButton(checkboxWithTitle: "粗体", target: self, action: #selector(boldTapped(_:)))
-        boldCheck.frame = CGRect(x: checkStartX, y: row1Y - 1, width: 48, height: 18)
+        boldCheck.frame = CGRect(x: checkStartX, y: row1Y - 1, width: 52, height: 18)
         boldCheck.font = labelFont
         boldCheck.controlSize = .small
         boldCheck.isHidden = true
         addSubview(boldCheck)
         self.boldButton = boldCheck
 
-        let bgPop = NSPopUpButton(frame: CGRect(x: checkStartX + 56, y: row1Y - 1, width: 68, height: 18), pullsDown: false)
+        let bgPop = NSPopUpButton(frame: CGRect(x: checkStartX + 60, y: row1Y - 1, width: 76, height: 18), pullsDown: false)
         bgPop.addItems(withTitles: ["透明", "白", "黑", "黄", "蓝", "红"])
         bgPop.controlSize = .small
         bgPop.font = labelFont
@@ -325,7 +325,7 @@ class AnnotationPropertiesView: NSView {
         self.outlineColorWell = nil
         
         // Font Popup (Bottom Row)
-        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX, y: row2Y - 1, width: 100, height: 18), pullsDown: false)
+        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX, y: row2Y - 1, width: 76, height: 18), pullsDown: false)
         fontPop.addItem(withTitle: "系统默认")
         // Add common fonts (含中文)
         let commonFonts = [
@@ -395,10 +395,11 @@ class AnnotationPropertiesView: NSView {
             
             // Row1 additions for Text: Bold + Background
             boldButton?.frame.origin = CGPoint(x: checkStartX, y: row1Y - 1)
-            backgroundPopup?.frame.origin = CGPoint(x: checkStartX + 56, y: row1Y - 1)
+            backgroundPopup?.frame.origin = CGPoint(x: checkStartX + 60, y: row1Y - 1)
             
             // Font Popup (Row2)
-            fontPopup?.frame.size.width = 100
+            // 字体下拉与上方底色宽度对齐（76）
+            fontPopup?.frame.size.width = 76
             fontPopup?.frame.origin = CGPoint(x: checkStartX, y: row2Y - 1)
             boldButton?.isHidden = false
         } else {
