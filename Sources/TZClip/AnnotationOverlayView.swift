@@ -91,7 +91,14 @@ class AnnotationOverlayView: NSView {
             currentConfig.color = newValue
             // Also update selected annotation if any
             if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
-                annotations[index].color = newValue
+                var annot = annotations[index]
+                if var counter = annot as? CounterAnnotation {
+                    if var l = counter.label { l.color = newValue; counter.label = l } else { counter.color = newValue }
+                    annotations[index] = counter
+                } else {
+                    annot.color = newValue
+                    annotations[index] = annot
+                }
                 needsDisplay = true
             }
             updateActiveTextView()
@@ -279,7 +286,8 @@ class AnnotationOverlayView: NSView {
                     annotations[index] = textAnnot
                     needsDisplay = true
                 } else if var counterAnnot = annotations[index] as? CounterAnnotation {
-                    counterAnnot.backgroundColor = newValue
+                    if var l = counterAnnot.label { l.backgroundColor = newValue; counterAnnot.label = l }
+                    else { counterAnnot.backgroundColor = newValue }
                     annotations[index] = counterAnnot
                     needsDisplay = true
                 }
@@ -403,6 +411,14 @@ class AnnotationOverlayView: NSView {
         }
     }
     
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if let tv = activeTextView, event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "a" {
+            tv.selectAll(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+    
     private func drawSelection(for annotation: Annotation, in context: CGContext) {
         context.saveGState()
         
@@ -513,9 +529,18 @@ class AnnotationOverlayView: NSView {
     }
     
     func deleteSelected() {
-        if let id = selectedAnnotationID {
-            annotations.removeAll(where: { $0.id == id })
-            selectedAnnotationID = nil
+        if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
+            if var counter = annotations[index] as? CounterAnnotation, selectedCounterPart == .label {
+                counter.label = nil
+                counter.text = nil
+                counter.labelOrigin = nil
+                annotations[index] = counter
+                // 保留序号徽章选中状态
+                selectedCounterPart = .badge
+            } else {
+                annotations.remove(at: index)
+                selectedAnnotationID = nil
+            }
             needsDisplay = true
         }
     }
@@ -820,10 +845,13 @@ class AnnotationOverlayView: NSView {
             
             if var counter = annot as? CounterAnnotation, let part = draggedCounterPart {
                 if part == .label {
-                    // Move label only
-                    if let origin = counter.labelOrigin {
-                         counter.labelOrigin = CGPoint(x: origin.x + delta.x, y: origin.y + delta.y)
-                         annot = counter
+                    if var l = counter.label {
+                        l.origin = CGPoint(x: l.origin.x + delta.x, y: l.origin.y + delta.y)
+                        counter.label = l
+                        annot = counter
+                    } else if let origin = counter.labelOrigin {
+                        counter.labelOrigin = CGPoint(x: origin.x + delta.x, y: origin.y + delta.y)
+                        annot = counter
                     }
                 } else {
                     // Move Badge Only (independent move)
@@ -892,9 +920,9 @@ class AnnotationOverlayView: NSView {
                       // So yes, origin stays fixed.
                       
                       // Update origin ONLY if the handle movement requires it (e.g. dragging bottom-left)
-                      counter.labelOrigin = newBounds.origin
+                      if var l = counter.label { l.origin = newBounds.origin; counter.label = l } else { counter.labelOrigin = newBounds.origin }
                  }
-                 annot = counter
+                annot = counter
             } else if var rectAnnot = annot as? RectangleAnnotation {
                 rectAnnot.rect = resizeRect(rectAnnot.rect, handle: handle, to: p, maintainAspectRatio: isShift)
                 annot = rectAnnot
@@ -1091,6 +1119,8 @@ class AnnotationOverlayView: NSView {
         }
         textView.isRichText = false
         textView.delegate = self
+        textView.textContainerInset = NSSize(width: 8, height: 3)
+        textView.textContainer?.lineFragmentPadding = 4
         
         // Auto-resizing configuration
         textView.isHorizontallyResizable = true
@@ -1109,7 +1139,9 @@ class AnnotationOverlayView: NSView {
             if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
                 layoutManager.ensureLayout(for: textContainer)
                 let usedRect = layoutManager.usedRect(for: textContainer)
-                textView.frame.size = CGSize(width: max(50, usedRect.width + 10), height: max(size + 4, usedRect.height))
+                let insetW = textView.textContainerInset.width * 2 + (textView.textContainer?.lineFragmentPadding ?? 0) * 2
+                let insetH = textView.textContainerInset.height * 2
+                textView.frame.size = CGSize(width: max(50, usedRect.width + insetW + 4), height: max(size + 4, usedRect.height + insetH))
             } else {
                 textView.sizeToFit()
             }
@@ -1125,7 +1157,7 @@ class AnnotationOverlayView: NSView {
              if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
                  layoutManager.ensureLayout(for: textContainer)
                  let height = layoutManager.usedRect(for: textContainer).height
-                 textView.frame.size.height = max(height, size + 4) // Ensure enough height
+                 textView.frame.size.height = max(height + textView.textContainerInset.height * 2, size + 4)
              }
              textView.frame.size.width = 50
         }
@@ -1151,25 +1183,31 @@ class AnnotationOverlayView: NSView {
         if !textView.string.isEmpty {
             // Check if we are editing a Counter
             if let id = editingAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }), var counter = annotations[index] as? CounterAnnotation {
-                // Update Counter
-                counter.text = textView.string
-                counter.labelOrigin = textView.frame.origin
-                
-                // Update properties
-                counter.color = textView.textColor ?? .black
-                counter.fontName = fontName
-                counter.isBold = isBold
-                counter.outlineStyle = outlineStyle
-                counter.outlineColor = outlineColor
-                counter.backgroundColor = currentConfig.textBackgroundColor
-                
-                // If user changed Size Slider while editing, update lineWidth
-                counter.lineWidth = currentLineWidth
-                
+                // 创建/更新 Counter 的 label 为 TextAnnotation
+                let fontSize = textView.font?.pointSize ?? currentLineWidth
+                let labelTA = TextAnnotation(
+                    text: textView.string,
+                    origin: textView.frame.origin,
+                    color: textView.textColor ?? .black,
+                    lineWidth: fontSize,
+                    font: textView.font ?? NSFont.systemFont(ofSize: fontSize),
+                    isBold: isBold,
+                    outlineStyle: outlineStyle,
+                    outlineColor: outlineColor,
+                    fontName: fontName,
+                    backgroundColor: currentConfig.textBackgroundColor
+                )
+                counter.label = labelTA
+                counter.text = nil
+                counter.labelOrigin = nil
+                // 同步字号到 Counter（用于 Badge 动态计算）
+                counter.lineWidth = fontSize
+                // 同步颜色（用于连线/徽章颜色一致）
+                counter.color = textView.textColor ?? counter.color
                 annotations[index] = counter
                 // Keep selected
                 selectedAnnotationID = counter.id
-                selectedCounterPart = .label // Keep label selected after editing
+                selectedCounterPart = .label
             } else {
                 // Standard Text Annotation Creation/Update
                 // Calculate font size from actual view font
@@ -1200,6 +1238,7 @@ class AnnotationOverlayView: NSView {
              // Empty string
              // If Counter, delete text part (set to nil).
              if let id = editingAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }), var counter = annotations[index] as? CounterAnnotation {
+                 counter.label = nil
                  counter.text = nil
                  counter.labelOrigin = nil
                  annotations[index] = counter
@@ -1241,10 +1280,17 @@ extension AnnotationOverlayView: NSTextViewDelegate {
     
     func textDidChange(_ notification: Notification) {
         guard let textView = notification.object as? NSTextView else { return }
-        textView.sizeToFit()
-        // Ensure minimum width
-        if textView.frame.width < 50 {
-            textView.frame.size.width = 50
+        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+            layoutManager.ensureLayout(for: textContainer)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let insetW = textView.textContainerInset.width * 2 + (textView.textContainer?.lineFragmentPadding ?? 0) * 2
+            let insetH = textView.textContainerInset.height * 2
+            let newW = max(50, usedRect.width + insetW + 4)
+            let newH = max(usedRect.height + insetH, (textView.font?.pointSize ?? 14) + 4)
+            textView.frame.size = CGSize(width: newW, height: newH)
+        } else {
+            textView.sizeToFit()
+            if textView.frame.width < 50 { textView.frame.size.width = 50 }
         }
     }
 }

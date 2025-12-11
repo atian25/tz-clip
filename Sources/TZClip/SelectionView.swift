@@ -487,7 +487,14 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
             guard let self = self, let props = self.propertiesView else { return }
             if let annot = annotation {
                 // Update Properties View with selected annotation properties
-                props.selectedColor = annot.color
+                if let counter = annot as? CounterAnnotation {
+                    let textColor = counter.label?.color ?? counter.color
+                    props.selectedColor = textColor
+                    self.annotationOverlay?.currentColor = textColor
+                } else {
+                    props.selectedColor = annot.color
+                    self.annotationOverlay?.currentColor = annot.color
+                }
                 props.selectedWidth = annot.lineWidth
                 if let textAnnot = annot as? TextAnnotation {
                     props.isBold = textAnnot.isBold
@@ -505,10 +512,11 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
                     props.isFilled = ellAnnot.isFilled
                 }
                 if let counterAnnot = annot as? CounterAnnotation {
-                    props.isBold = counterAnnot.isBold
-                    props.fontName = counterAnnot.fontName
-                    props.textBackgroundColor = counterAnnot.backgroundColor
-                    self.annotationOverlay?.currentTextBackgroundColor = counterAnnot.backgroundColor
+                    props.isBold = counterAnnot.label?.isBold ?? counterAnnot.isBold
+                    props.fontName = counterAnnot.label?.fontName ?? counterAnnot.fontName
+                    let bg = counterAnnot.label?.backgroundColor ?? counterAnnot.backgroundColor
+                    props.textBackgroundColor = bg
+                    self.annotationOverlay?.currentTextBackgroundColor = bg
                 }
                 
                 // Configure View for Type
@@ -645,6 +653,11 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
     // MARK: - Keyboard & Toolbar
     
     override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "a" {
+            if let overlay = annotationOverlay, overlay.performKeyEquivalent(with: event) {
+                return
+            }
+        }
         if event.keyCode == 53 { // ESC
             handleCancel()
             return

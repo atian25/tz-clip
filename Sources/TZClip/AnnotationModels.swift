@@ -230,8 +230,10 @@ struct CounterAnnotation: Annotation {
         NSGraphicsContext.current = nsContext
         numStr.draw(at: numOrigin, withAttributes: numAttrs)
         
-        // 3. Draw Label：直接复用 TextAnnotation 渲染，行为与文字标注完全一致
-        if let text = text, let origin = labelOrigin {
+        // 3. Draw Label：复用 TextAnnotation 渲染
+        if let l = label {
+            l.draw(in: context)
+        } else if let text = text, let origin = labelOrigin {
             let ta = TextAnnotation(
                 text: text,
                 origin: origin,
@@ -260,7 +262,11 @@ struct CounterAnnotation: Annotation {
         var new = self
         new.badgeCenter.x += translation.x
         new.badgeCenter.y += translation.y
-        if let origin = labelOrigin {
+        if var l = new.label {
+            l.origin.x += translation.x
+            l.origin.y += translation.y
+            new.label = l
+        } else if let origin = labelOrigin {
             new.labelOrigin = CGPoint(x: origin.x + translation.x, y: origin.y + translation.y)
         }
         return new

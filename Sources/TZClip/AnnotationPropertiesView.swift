@@ -71,6 +71,7 @@ class AnnotationPropertiesView: NSView {
     private var outlineColorWell: NSColorWell?
     private var fontPopup: NSPopUpButton?
     private var backgroundPopup: NSPopUpButton?
+    private var backgroundLabel: NSTextField?
     
     // State
     private let colors: [NSColor] = [.red, .magenta, .blue, .yellow, .green] // 5 fixed colors + 1 custom
@@ -302,7 +303,16 @@ class AnnotationPropertiesView: NSView {
         addSubview(boldCheck)
         self.boldButton = boldCheck
 
-        let bgPop = NSPopUpButton(frame: CGRect(x: checkStartX + 60, y: row1Y - 1, width: 76, height: 18), pullsDown: false)
+        // 背景底色：第一行带标签
+        let bgLabel = NSTextField(labelWithString: "底色")
+        bgLabel.font = labelFont
+        bgLabel.textColor = .secondaryLabelColor
+        bgLabel.frame = CGRect(x: checkStartX, y: row1Y, width: 32, height: 16)
+        bgLabel.isHidden = true
+        addSubview(bgLabel)
+        self.backgroundLabel = bgLabel
+
+        let bgPop = NSPopUpButton(frame: CGRect(x: checkStartX + 36, y: row1Y - 1, width: 76, height: 18), pullsDown: false)
         bgPop.addItems(withTitles: ["透明", "白", "黑", "黄", "蓝", "红"])
         bgPop.controlSize = .small
         bgPop.font = labelFont
@@ -325,7 +335,7 @@ class AnnotationPropertiesView: NSView {
         self.outlineColorWell = nil
         
         // Font Popup (Bottom Row)
-        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX, y: row2Y - 1, width: 76, height: 18), pullsDown: false)
+        let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX + 60, y: row2Y - 1, width: 76, height: 18), pullsDown: false)
         fontPop.addItem(withTitle: "系统默认")
         // Add common fonts (含中文)
         let commonFonts = [
@@ -376,6 +386,7 @@ class AnnotationPropertiesView: NSView {
         let isTextOrCounter = (type == .text || type == .counter)
         boldButton?.isHidden = !isTextOrCounter
         backgroundPopup?.isHidden = !isTextOrCounter
+        backgroundLabel?.isHidden = !isTextOrCounter
         
         // Toggle Checkboxes (Rectangle/Ellipse)
         let isShape = (type == .rectangle || type == .ellipse)
@@ -391,16 +402,15 @@ class AnnotationPropertiesView: NSView {
         fontPopup?.isHidden = !isTextOrCounter
         
         if isTextOrCounter {
-            // Re-layout for Text/Counter Mode（去除描边控件）
+            // 文本/序号布局：
+            // 第一行：底色标签 + 下拉
+            backgroundLabel?.frame.origin = CGPoint(x: checkStartX, y: row1Y)
+            backgroundPopup?.frame.origin = CGPoint(x: checkStartX + 36, y: row1Y - 1)
             
-            // Row1 additions for Text: Bold + Background
-            boldButton?.frame.origin = CGPoint(x: checkStartX, y: row1Y - 1)
-            backgroundPopup?.frame.origin = CGPoint(x: checkStartX + 60, y: row1Y - 1)
-            
-            // Font Popup (Row2)
-            // 字体下拉与上方底色宽度对齐（76）
+            // 第二行：粗体 + 字体下拉
+            boldButton?.frame.origin = CGPoint(x: checkStartX, y: row2Y - 1)
             fontPopup?.frame.size.width = 76
-            fontPopup?.frame.origin = CGPoint(x: checkStartX, y: row2Y - 1)
+            fontPopup?.frame.origin = CGPoint(x: checkStartX + 60, y: row2Y - 1)
             boldButton?.isHidden = false
         } else {
             // Reset logic for other tools? Bold is hidden anyway.

@@ -55,17 +55,14 @@ Status: Implemented
     *   **中间区 (Middle Section) - 颜色选择**:
         *   **3x2 矩阵排列**的圆形色块。
         *   提供 5 种常用颜色（红、品红、蓝、黄、绿） + **自定义颜色按钮**（调用系统色板）。
-    *   **右侧区 (Right Section) - 文本第三区块规范**:
-        *   **文本工具 (Text)**：两行核心
+    *   **右侧区 (Right Section) - 文本/序号统一规范**:
+        *   两行核心：
             1. 行1：
-               - **粗体**：带标签的开关控件（“粗体”），用于切换 `bold`。
-               - **底色**：下拉框（首项“透明”），固定若干预设颜色；每个选项以方框直观展示颜色。用于文字背景填充色（与透明度联动）。
+               - **底色**：标签“底色” + 下拉框（首项“透明”），预设颜色；用于文字背景填充（与透明度联动）。
             2. 行2：
-               - **字体类型**：字体族下拉（系统与常用字体），固定列宽，超长省略号处理。
-            - 去除“描边样式/颜色”配置，避免与“粗体”重复并简化布局。
-        *   **序号工具 (Counter)**：
-            - 隐藏“底色”下拉（序号背景由容器 `shapeColor` 控制）；保留“粗体”与“字体类型”。
-            - 描边样式/颜色可选显示，用于数字轮廓增强。
+               - **粗体**：开关控件（“粗体”）。
+               - **字体**：字体族下拉（系统与常用字体）。
+        *   文本与序号工具在此区保持一致布局；为简化移除“描边样式/颜色”控件。
 
 #### 2.2.1 详细属性定义
 *   **粗细/字号 (Size)**:
@@ -88,9 +85,9 @@ Status: Implemented
         *   **结束**: 点击画布空白处或按下 `Cmd+Enter` 完成输入。
         *   **独立性**: 连续输入多段文字时，每段文字属性独立，互不干扰。
     *   **序号工具 (Counter)**:
-        *   **点击**: 在点击位置生成一个新的序号标记 (Badge)，序号自动递增 (1, 2, 3...)。
-        *   **默认状态**: 仅显示序号 Badge，不自动进入文本编辑模式。
-        *   **添加说明**: 用户可以通过双击序号 Badge 或相关联的操作来激活文本输入，生成与 Badge 连接的 Label。
+        *   **点击**: 在点击位置生成新的序号 (Badge)，序号自动递增。
+        *   **属性继承**: 新序号默认继承上一枚在属性面板中设置的文字样式配置（粗体/字体/底色）。
+        *   **添加说明**: 双击序号或其文字区域进入编辑，生成或修改与 Badge 连接的 Label；文字渲染完全复用 Text 标注组件。
 *   **选择与编辑 (Selecting & Editing)**:
     *   点击已有图形自动进入选择模式。
     *   **文字编辑**:
@@ -105,24 +102,18 @@ Status: Implemented
         *   **递增逻辑**: 删除中间某个序号后，后续序号自动重新排序 (Reflow) 或保持不变 (取决于实现复杂度，建议 MVP 保持不变，手动调整)。
     *   **移动**: 拖动图形主体。
     *   **缩放**: 拖动图形周围的 8 个控制点 (Handles)。`Shift` 键保持比例。
-    *   **删除**: 选中后按 `Delete` / `Backspace`。
+    *   **删除**: 选中后按 `Delete` / `Backspace`。当选中序号的文字部分时仅删除文字，保留圆形序号。
     *   **属性修改**: 选中图形后，改变属性面板设置，实时应用到图形。
 
 ### 2.4 工具细分与文字属性统一
-1. **共用控件组件**：文字工具与序号工具共用 `TextStyleControls` UI 组件；配置存储独立（`TextToolConfig` 与 `CounterToolConfig`）。
-2. **Text 工具属性**：
-   - 字体族、字号、字重/粗细、颜色、透明度、描边样式与颜色、背景填充
-   - 初始化完成后（窗口信息采集就绪）才显示十字线与窗口高亮（参见 Architecture 的初始化 gating）
-3. **Counter 工具属性**：
-   - 继承文字属性；新增容器形状（圆/圆角矩形/无）、容器颜色与内边距、自动递增与起始值
-   - 隐藏“背景填充”，由容器形状与颜色决定外观
-4. **右侧布局规范**：
-   - 三行分组：颜色矩阵与预览；样式（描边样式/颜色/填充）；字体（字体族/粗细或 B）
-   - `Weight` 与 **B** 互斥显示，统一高度与基线，消除错位
+1. **共用属性面板**：文字与序号共用右侧“底色/粗体/字体”控件；两者的最近一次配置分别独立记忆。
+2. **Text 工具属性**：字体族、字号、粗体、颜色、透明度、背景填充；初始化 gating 后开启十字线与窗口高亮。
+3. **Counter 工具属性**：序号文字完全复用 `TextAnnotation` 渲染与编辑；圆形 Badge 与连接线使用序号颜色；支持文字与徽章分部编辑与删除；默认继承上一枚样式配置。
+4. **布局规范**：右侧两行（底色；粗体+字体）统一高度与基线，保持与左中区对齐。
 
 ### 2.5 默认值与策略
-1. 文本工具：`font=System`、`size=18pt`、`weight=400`、`outline=none`
-2. 序号工具：`shape=circle`、`padding=6`、`size=16pt`、`weight=600`、`autoIncrement=true`、`startIndex=1`
+1. 文本工具：`font=System`、`size=18pt`、`weight=400`、`background=transparent`
+2. 序号工具：`shape=circle`、`size=18pt`、`autoIncrement=true`、独立记忆最近一次的文字样式（粗体/字体/底色）。
 
 ## 3. 技术架构 (Technical Architecture)
 
@@ -160,19 +151,16 @@ SelectionView (NSView)
     *   `move(by translation: CGPoint) -> Annotation`
 *   **实现**: `RectangleAnnotation`, `EllipseAnnotation`, `LineAnnotation`, `TextAnnotation` (增强: `outlineStyle`, `outlineColor`, `fontName`), `CounterAnnotation` 等。
 
-#### `CounterAnnotation` (New)
+#### `CounterAnnotation`
 *   **属性**:
     *   `number: Int`: 序号值。
     *   `badgeCenter: CGPoint`: 序号圆圈中心点。
-    *   `labelOrigin: CGPoint?`: 文本说明的位置 (可选)。
-    *   `text: String?`: 文本内容。
-    *   `attributes`: 颜色、字体等通用属性。
+    *   `label: TextAnnotation?`: 复用文字标注作为序号说明文本；不存在时为仅徽章模式。
 *   **绘制逻辑**:
-    *   绘制圆形 Badge 背景和数字。
-    *   如果有 `labelOrigin` 和 `text`，绘制连接线 (Badge Center -> Label Center) 和文本 Label。
+    *   绘制圆形 Badge 背景和数字；若有 `label`，绘制连接线并渲染文本。
 *   **交互逻辑**:
-    *   `hitTest` 需要分别判断命中 Badge 还是 Label。
-    *   `move` 根据命中部分决定是整体移动还是独立移动。
+    *   `hitTest` 分别判断命中 Badge 或 Label；支持独立移动与缩放。
+    *   删除选中 Label 时仅移除文字，保留 Badge。
 
 #### `AnnotationToolbar` & `PropertiesView`
 *   纯 UI 组件，通过 `Delegate` 或 `Closure` 与 `SelectionView` 通信。
