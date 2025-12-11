@@ -328,8 +328,12 @@ class AnnotationPropertiesView: NSView {
         // Font Popup (Bottom Row)
         let fontPop = NSPopUpButton(frame: CGRect(x: checkStartX + 64, y: row2Y, width: 112, height: 16), pullsDown: false)
         fontPop.addItem(withTitle: "系统默认")
-        // Add some common fonts
-        let commonFonts = ["Helvetica", "Arial", "Times New Roman", "Courier New", "Verdana"]
+        // Add common fonts (含中文)
+        let commonFonts = [
+            "Helvetica", "Arial", "Times New Roman", "Courier New", "Verdana",
+            "PingFang SC", "苹方-简", "SimSun", "宋体", "SimHei", "黑体",
+            "Microsoft YaHei", "微软雅黑", "Source Han Sans SC", "思源黑体"
+        ]
         fontPop.addItems(withTitles: commonFonts)
         fontPop.controlSize = .small
         fontPop.font = labelFont
@@ -577,7 +581,8 @@ class AnnotationPropertiesView: NSView {
     }
     
     @objc private func fontChanged(_ sender: NSPopUpButton) {
-        fontName = sender.titleOfSelectedItem ?? "System Default"
+        let title = sender.titleOfSelectedItem ?? "系统默认"
+        fontName = (title == "系统默认") ? "System Default" : title
         delegate?.didChangeFontName(fontName)
     }
 }

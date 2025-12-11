@@ -724,6 +724,7 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         // Default Toolbar X: Bottom Right of selection, constrained
         var toolbarX = selectionRect.maxX - toolbarSize.width
         toolbarX = max(padding, toolbarX)
+        toolbarX = min(bounds.width - toolbarSize.width - padding, toolbarX)
         
         // Default Toolbar Y: Below selection
         var toolbarY = selectionRect.minY - padding - toolbarSize.height
@@ -758,7 +759,8 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
         // Wait, usually Props is secondary, so maybe stack them nicely.
         // Let's stack them vertically aligned left to the toolbar? Or same alignment?
         
-        let propsX = toolbarX // Align lefts
+        var propsX = toolbarX
+        propsX = min(bounds.width - propsSize.width - padding, max(padding, propsX))
         var propsY: CGFloat = 0
         
         if isToolbarBelow {
@@ -1019,6 +1021,8 @@ class SelectionView: NSView, AnnotationToolbarDelegate, AnnotationPropertiesDele
             propsY = toolbar.frame.maxY + padding
         }
         
-        props.frame.origin = NSPoint(x: toolbar.frame.minX, y: propsY)
+        var finalX = toolbar.frame.minX
+        finalX = min(bounds.width - propsSize.width - padding, max(padding, finalX))
+        props.frame.origin = NSPoint(x: finalX, y: propsY)
     }
 }

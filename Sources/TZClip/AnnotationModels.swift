@@ -101,7 +101,7 @@ struct CounterAnnotation: Annotation {
         let size = max(10.0, min(100.0, lineWidth))
         
         var baseFont: NSFont
-        if fontName == "System Default" {
+        if fontName == "System Default" || fontName == "系统默认" {
             baseFont = NSFont.systemFont(ofSize: size)
         } else {
             baseFont = NSFont(name: fontName, size: size) ?? NSFont.systemFont(ofSize: size)
@@ -567,6 +567,7 @@ struct TextAnnotation: Annotation {
     var outlineStyle: Int = 0 // 0: None, 1: Thin, 2: Thick
     var outlineColor: NSColor = .black
     var fontName: String = "System Default" // "System Default" or Font Name
+    var backgroundColor: NSColor? = nil
     
     var bounds: CGRect {
         let attributes: [NSAttributedString.Key: Any] = [.font: effectiveFont]
@@ -580,7 +581,7 @@ struct TextAnnotation: Annotation {
         let size = max(10.0, min(100.0, lineWidth))
         
         var baseFont: NSFont
-        if fontName == "System Default" {
+        if fontName == "System Default" || fontName == "系统默认" {
             baseFont = NSFont.systemFont(ofSize: size)
         } else {
             baseFont = NSFont(name: fontName, size: size) ?? NSFont.systemFont(ofSize: size)
@@ -603,6 +604,11 @@ struct TextAnnotation: Annotation {
         let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.current = nsContext
         
+        if let bg = backgroundColor {
+            context.setFillColor(bg.cgColor)
+            context.fill(bounds)
+        }
+
         var attributes: [NSAttributedString.Key: Any] = [
             .font: effectiveFont,
             .foregroundColor: color

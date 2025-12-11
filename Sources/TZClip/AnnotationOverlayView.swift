@@ -1143,7 +1143,8 @@ class AnnotationOverlayView: NSView {
                     isBold: isBold,
                     outlineStyle: outlineStyle,
                     outlineColor: outlineColor,
-                    fontName: fontName
+                    fontName: fontName,
+                    backgroundColor: currentConfig.textBackgroundColor
                 )
                 annotations.append(annot)
                 
