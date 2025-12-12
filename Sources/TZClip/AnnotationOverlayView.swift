@@ -84,31 +84,37 @@ class AnnotationOverlayView: NSView {
                 var annot = annotations[index]
                 
                 if var counter = annot as? CounterAnnotation {
-                    let oldRadius = counter.badgeRadius
-                    let oldLineWidth = counter.lineWidth
-                    counter.lineWidth = newValue
-                    let newRadius = counter.badgeRadius
-                    
-                    if let labelOrigin = counter.labelOrigin, let labelRect = counter.labelRect {
+                    if activeTextView == nil, var l = counter.label {
+                        let oldLabelWidth = l.lineWidth
+                        l.lineWidth = newValue
+                        let labelRect = l.bounds
                         let badgeCenter = counter.badgeCenter
                         let labelCenter = CGPoint(x: labelRect.midX, y: labelRect.midY)
-                        
                         let vX = labelCenter.x - badgeCenter.x
                         let vY = labelCenter.y - badgeCenter.y
                         let dist = hypot(vX, vY)
-                        
                         if dist > 1.0 {
                             let dirX = vX / dist
                             let dirY = vY / dist
-                            
-                            let deltaBadge = newRadius - oldRadius
-                            let deltaText = (newValue - oldLineWidth) * 0.5
-                            let push = deltaBadge + deltaText
-                            
-                            counter.labelOrigin = CGPoint(
-                                x: labelOrigin.x + dirX * push,
-                                y: labelOrigin.y + dirY * push
-                            )
+                            let deltaText = (newValue - oldLabelWidth) * 0.5
+                            l.origin = CGPoint(x: l.origin.x + dirX * deltaText, y: l.origin.y + dirY * deltaText)
+                        }
+                        counter.label = l
+                    } else {
+                        let oldLineWidth = counter.lineWidth
+                        counter.lineWidth = newValue
+                        if let labelOrigin = counter.labelOrigin, let labelRect = counter.labelRect {
+                            let badgeCenter = counter.badgeCenter
+                            let labelCenter = CGPoint(x: labelRect.midX, y: labelRect.midY)
+                            let vX = labelCenter.x - badgeCenter.x
+                            let vY = labelCenter.y - badgeCenter.y
+                            let dist = hypot(vX, vY)
+                            if dist > 1.0 {
+                                let dirX = vX / dist
+                                let dirY = vY / dist
+                                let deltaText = (newValue - oldLineWidth) * 0.5
+                                counter.labelOrigin = CGPoint(x: labelOrigin.x + dirX * deltaText, y: labelOrigin.y + dirY * deltaText)
+                            }
                         }
                     }
                     annot = counter
@@ -359,6 +365,27 @@ class AnnotationOverlayView: NSView {
         
         // Draw current annotation being created
         currentAnnotation?.draw(in: context)
+
+        if let tv = activeTextView, let id = editingAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }), let counter = annotations[index] as? CounterAnnotation {
+            let labelRect = tv.frame
+            let labelCenter = CGPoint(x: labelRect.midX, y: labelRect.midY)
+            let dx = labelCenter.x - counter.badgeCenter.x
+            let dy = labelCenter.y - counter.badgeCenter.y
+            var targetPoint = labelCenter
+            let halfW = labelRect.width / 2.0
+            let halfH = labelRect.height / 2.0
+            if halfW > 0 && halfH > 0 {
+                let tx = halfW / abs(dx)
+                let ty = halfH / abs(dy)
+                let t = min(tx, ty)
+                targetPoint = CGPoint(x: labelCenter.x - t * dx, y: labelCenter.y - t * dy)
+            }
+            context.setStrokeColor(counter.color.cgColor)
+            context.setLineWidth(2.0)
+            context.move(to: counter.badgeCenter)
+            context.addLine(to: targetPoint)
+            context.strokePath()
+        }
         
         // Draw selection highlight and handles
         if let id = selectedAnnotationID, let annotation = annotations.first(where: { $0.id == id }) {
@@ -557,6 +584,7 @@ class AnnotationOverlayView: NSView {
                      self.currentTextBackgroundColor = counterAnnot.label?.backgroundColor ?? counterAnnot.backgroundColor
                      
                      startTextEditing(at: origin, existingText: counterAnnot.label?.text ?? counterAnnot.text, existingAnnotID: counterAnnot.id, isCounter: true)
+                     skipNextBlankClickCreation = true
                      return
                  }
              }
@@ -686,7 +714,7 @@ class AnnotationOverlayView: NSView {
                 }
             }
         } else if dragAction == .creating {
-            guard let start = dragStartPoint, var annot = currentAnnotation else { return }
+            guard let start = dragStartPoint, let annot = currentAnnotation else { return }
             
             let isShift = event.modifierFlags.contains(.shift)
             
@@ -763,7 +791,7 @@ class AnnotationOverlayView: NSView {
                       let oldBounds = counter.badgeRect
                       let newBounds = resizeRect(oldBounds, handle: handle, to: p, maintainAspectRatio: true)
                       let newRadius = newBounds.width / 2.0
-                      counter.lineWidth = max(10.0, min(100.0, (newRadius - 4.0) / 0.6))
+                      counter.badgeBase = max(10.0, min(100.0, (newRadius - 4.0) / 0.6))
                       counter.badgeCenter = CGPoint(x: newBounds.midX, y: newBounds.midY)
                  } else if selectedCounterPart == .label, let oldLabelRect = counter.labelRect {
                       let newBounds = resizeRect(oldLabelRect, handle: handle, to: p, maintainAspectRatio: true)
@@ -830,11 +858,13 @@ class AnnotationOverlayView: NSView {
                 needsDisplay = true
                 return
             } else if currentTool == .counter {
+                if activeTextView != nil { return }
                 if skipNextBlankClickCreation {
                     skipNextBlankClickCreation = false
                 } else {
                     let originPoint = dragStartPoint ?? convert(event.locationInWindow, from: nil)
                     var c = CounterAnnotation(number: nextCounterValue, badgeCenter: originPoint, labelOrigin: nil, text: nil, color: currentColor, lineWidth: currentLineWidth)
+                    c.badgeBase = c.lineWidth
                     c.fontName = currentFontName
                     c.isBold = currentIsBold
                     c.outlineStyle = currentOutlineStyle
@@ -872,7 +902,7 @@ class AnnotationOverlayView: NSView {
     }
     
     private func resizeRect(_ rect: CGRect, handle: ResizeHandle, to point: CGPoint, maintainAspectRatio: Bool = false) -> CGRect {
-        var r = rect
+        let r = rect
         var newX = r.origin.x
         var newY = r.origin.y
         var newW = r.width
@@ -985,6 +1015,13 @@ class AnnotationOverlayView: NSView {
             if let id = existingAnnotID, !isCounter {
                 annotations.removeAll(where: { $0.id == id })
                 needsDisplay = true
+            } else if let id = existingAnnotID, isCounter {
+                if let idx = annotations.firstIndex(where: { $0.id == id }), var counter = annotations[idx] as? CounterAnnotation {
+                    counter.label = nil
+                    counter.text = nil
+                    annotations[idx] = counter
+                    needsDisplay = true
+                }
             }
             if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
                 layoutManager.ensureLayout(for: textContainer)

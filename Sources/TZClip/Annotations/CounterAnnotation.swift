@@ -10,6 +10,7 @@ struct CounterAnnotation: Annotation {
     var label: TextAnnotation? = nil
     var color: NSColor
     var lineWidth: CGFloat
+    var badgeBase: CGFloat = 20.0
     var fontName: String = "System Default"
     var isBold: Bool = false
     var outlineStyle: Int = 0
@@ -22,8 +23,8 @@ struct CounterAnnotation: Annotation {
         return badgeRect
     }
     var badgeRadius: CGFloat {
-        let freezeAtLineWidth: CGFloat = 20.0 / 0.6 // numberFontSize cap threshold (~33.33)
-        let size = min(max(12.0, lineWidth), freezeAtLineWidth)
+        let freezeAtLineWidth: CGFloat = 20.0 / 0.6
+        let size = min(max(12.0, badgeBase), freezeAtLineWidth)
         var radius: CGFloat
         if size <= 20 {
             radius = 8.0 + (size - 10.0) * 0.4
@@ -37,8 +38,8 @@ struct CounterAnnotation: Annotation {
         return CGRect(x: badgeCenter.x - r, y: badgeCenter.y - r, width: r * 2, height: r * 2)
     }
     var numberFontSize: CGFloat {
-        let textSize = max(12.0, min(100.0, lineWidth))
-        return min(textSize * 0.6, 20.0)
+        let base = max(12.0, min(100.0, badgeBase))
+        return min(base * 0.6, 20.0)
     }
     var labelRect: CGRect? {
         if let l = label { return l.bounds }
@@ -82,7 +83,6 @@ struct CounterAnnotation: Annotation {
             context.addLine(to: targetPoint)
             context.strokePath()
         }
-        let r = badgeRadius
         let rect = badgeRect
         context.setFillColor(color.cgColor)
         context.fillEllipse(in: rect)
