@@ -30,6 +30,7 @@ struct RectangleAnnotation: Annotation {
         context.restoreGState()
     }
     func contains(point: CGPoint) -> Bool {
+        if isFilled { return rect.contains(point) }
         let path = CGPath(rect: rect, transform: nil)
         let strokedPath = path.copy(strokingWithWidth: max(lineWidth, 10), lineCap: .butt, lineJoin: .miter, miterLimit: 10)
         return strokedPath.contains(point)

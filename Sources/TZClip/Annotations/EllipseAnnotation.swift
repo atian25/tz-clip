@@ -23,6 +23,7 @@ struct EllipseAnnotation: Annotation {
     }
     func contains(point: CGPoint) -> Bool {
         let path = CGPath(ellipseIn: rect, transform: nil)
+        if isFilled { return path.contains(point) }
         let strokedPath = path.copy(strokingWithWidth: max(lineWidth, 10), lineCap: .butt, lineJoin: .miter, miterLimit: 10)
         return strokedPath.contains(point)
     }

@@ -41,6 +41,7 @@ class AnnotationOverlayView: NSView {
     }
     
     private var currentConfig: ToolConfig = ToolConfig()
+    private var pendingCreateAfterToolSwitch: Bool = false
     
     var currentTool: AnnotationType? {
         willSet {
@@ -53,6 +54,7 @@ class AnnotationOverlayView: NSView {
             
             if currentTool != .select {
                 selectedAnnotationID = nil
+                pendingCreateAfterToolSwitch = true
             }
         }
     }
@@ -326,6 +328,8 @@ class AnnotationOverlayView: NSView {
             outlineColor: currentOutlineColor,
             fontName: currentFontName
         )
+        self.needsDisplay = true
+        self.window?.invalidateCursorRects(for: self)
     }
     func resetBlankClickCreationProtection() { skipNextBlankClickCreation = false }
 
@@ -358,14 +362,6 @@ class AnnotationOverlayView: NSView {
         
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        // Draw all committed annotations
-        for annotation in annotations {
-            annotation.draw(in: context)
-        }
-        
-        // Draw current annotation being created
-        currentAnnotation?.draw(in: context)
-
         if let tv = activeTextView, let id = editingAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }), let counter = annotations[index] as? CounterAnnotation {
             let labelRect = tv.frame
             let labelCenter = CGPoint(x: labelRect.midX, y: labelRect.midY)
@@ -385,6 +381,23 @@ class AnnotationOverlayView: NSView {
             context.move(to: counter.badgeCenter)
             context.addLine(to: targetPoint)
             context.strokePath()
+        }
+        
+        // Draw all committed annotations
+        for annotation in annotations {
+            annotation.draw(in: context)
+        }
+        
+        // Draw current annotation being created
+        currentAnnotation?.draw(in: context)
+
+        if let tv = activeTextView {
+            let rect = tv.frame
+            context.saveGState()
+            context.setStrokeColor(NSColor.selectedControlColor.cgColor)
+            context.setLineWidth(1.0)
+            context.stroke(rect)
+            context.restoreGState()
         }
         
         // Draw selection highlight and handles
@@ -540,6 +553,9 @@ class AnnotationOverlayView: NSView {
                     addCursorRect(rect, cursor: .pointingHand)
                 }
             }
+            if activeTextView == nil {
+                // Only show hand cursor for drag affordance when not editing
+            }
         }
     }
     
@@ -602,20 +618,14 @@ class AnnotationOverlayView: NSView {
             
             if let counter = annotation as? CounterAnnotation {
                  if let labelRect = counter.labelRect, labelRect.contains(p) {
-                     if selectedCounterPart != .label {
-                         selectedCounterPart = .label
-                         draggedCounterPart = .label
-                         needsDisplay = true
-                     }
+                     selectedCounterPart = .label
+                     draggedCounterPart = .label
                      dragAction = .moving
                      dragStartPoint = p
                      return
                  } else if counter.badgeRect.contains(p) {
-                     if selectedCounterPart != .badge {
-                         selectedCounterPart = .badge
-                         draggedCounterPart = .badge
-                         needsDisplay = true
-                     }
+                     selectedCounterPart = .badge
+                     draggedCounterPart = .badge
                      dragAction = .moving
                      dragStartPoint = p
                      return
@@ -628,6 +638,11 @@ class AnnotationOverlayView: NSView {
         }
         
         if let index = annotations.lastIndex(where: { $0.contains(point: p) }) {
+            if pendingCreateAfterToolSwitch, let tool = currentTool, tool != .select {
+                dragStartPoint = p
+                dragAction = .none
+                return
+            }
             let annot = annotations[index]
             
             if currentTool != .select {
@@ -711,6 +726,7 @@ class AnnotationOverlayView: NSView {
                         break
                     }
                     dragAction = .creating
+                    pendingCreateAfterToolSwitch = false
                 }
             }
         } else if dragAction == .creating {
@@ -1059,6 +1075,8 @@ class AnnotationOverlayView: NSView {
             outlineColor: currentOutlineColor,
             fontName: currentFontName
         )
+        self.window?.invalidateCursorRects(for: self)
+        self.needsDisplay = true
     }
     
     private func endTextEditing() {
@@ -1133,6 +1151,7 @@ class AnnotationOverlayView: NSView {
         if let selectionView = self.superview {
             self.window?.makeFirstResponder(selectionView)
         }
+        self.window?.invalidateCursorRects(for: self)
     }
 }
 
@@ -1170,6 +1189,8 @@ extension AnnotationOverlayView: NSTextViewDelegate {
         let newH = max(ceil(textSize.height) + insetH, lh)
         textView.frame.size = CGSize(width: newW, height: newH)
         textView.textContainer?.containerSize = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        self.needsDisplay = true
+        self.window?.invalidateCursorRects(for: self)
         return true
     }
     
@@ -1189,5 +1210,7 @@ extension AnnotationOverlayView: NSTextViewDelegate {
             textView.sizeToFit()
             if textView.frame.width < 24 { textView.frame.size.width = 24 }
         }
+        self.needsDisplay = true
+        self.window?.invalidateCursorRects(for: self)
     }
 }
